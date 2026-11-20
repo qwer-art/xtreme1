@@ -6,6 +6,7 @@ import * as _ from 'lodash';
 
 import useQuery from './useQuery';
 import useToken from './useToken';
+import { localTrial } from '../common/localTrial';
 
 export type IHandlerType = keyof typeof pageHandler;
 
@@ -13,7 +14,7 @@ export default function UseFlow() {
     let editor = useInjectEditor();
     let { bsState, state } = editor;
     let query = useQuery();
-    let token = useToken();
+    let token = localTrial ? '' : useToken();
 
     // datasetId=30093&dataId=352734&type=readOnly
 
@@ -24,11 +25,11 @@ export default function UseFlow() {
     async function init() {
         iniQuery();
 
-        if (!token) {
+        if (!localTrial && !token) {
             editor.showMsg('error', editor.lang('not-login'));
             return;
         }
-        setToken(token);
+        if (!localTrial) setToken(token);
 
         initFlowEvent();
         handleUnload();

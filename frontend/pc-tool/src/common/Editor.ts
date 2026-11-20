@@ -5,6 +5,7 @@ import { utils, AttrType, IClassificationAttr, IUserData } from 'pc-editor';
 import * as api from '../api';
 import BusinessManager from './BusinessManager';
 import DataManager from './DataManager';
+import { localTrial, saveLocalFrames } from './localTrial';
 
 export default class Editor extends BaseEditor {
     businessManager: BusinessManager;
@@ -85,9 +86,8 @@ export default class Editor extends BaseEditor {
         bsState.saving = true;
         try {
             // debugger
-            await api.saveObject(objectInfo).then((keyMap) => {
-                this.updateBackId(keyMap);
-            });
+            if (localTrial) saveLocalFrames(dataInfos);
+            else this.updateBackId(await api.saveObject(objectInfo));
             frames.forEach((e) => {
                 e.needSave = false;
             });

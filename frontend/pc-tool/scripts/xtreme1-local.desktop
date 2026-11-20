@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Xtreme1
+Comment=Local LiDAR and camera annotation
+Exec=/bin/bash /home/jerett/catkin_ws/src/xtreme1/frontend/pc-tool/scripts/open-local-trial.sh
+Icon=/home/jerett/catkin_ws/src/xtreme1/frontend/pc-tool/public/x.png
+Terminal=false
+Categories=Graphics;Science;
+StartupWMClass=127.0.0.1__local-trial

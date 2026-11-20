@@ -9,6 +9,7 @@ import {
 } from 'pc-editor';
 import Editor from './Editor';
 import * as api from '../api';
+import { localTrial, readLocalObjects } from './localTrial';
 
 export default class BusinessManager extends BaseBusinessManager {
     editor: Editor;
@@ -18,6 +19,12 @@ export default class BusinessManager extends BaseBusinessManager {
     }
 
     async loadFrameConfig(data: IFrame): Promise<IDataResource> {
+        if (localTrial) {
+            const response = await fetch('/local-frame/views.json');
+            if (!response.ok) throw new Error(`views.json: HTTP ${response.status}`);
+            return { pointsUrl: data.pointsUrl, pointsData: {}, viewConfig: await response.json(),
+                time: 0, name: 'scene-0061' };
+        }
         const regLidar = new RegExp(/point(_?)cloud/i);
         const regConfig = new RegExp(/camera(_?)config/i);
         let { configs: fileConfig, name } = await api.getDataFile(data.id + '');
@@ -48,6 +55,7 @@ export default class BusinessManager extends BaseBusinessManager {
     async getFrameClassification(
         frame: IFrame | IFrame[],
     ): Promise<Record<string, Record<string, string>>> {
+        if (localTrial) return {};
         let valueMap = await api.getDataClassificationBatch(
             Array.isArray(frame) ? frame.map((e) => e.id) : frame.id,
         );
@@ -59,6 +67,7 @@ export default class BusinessManager extends BaseBusinessManager {
         classificationMap: Record<string, IObject[]>;
         queryTime: string;
     }> {
+        if (localTrial) return readLocalObjects(frame);
         let data = await api.getDataObjectBatch(
             Array.isArray(frame) ? frame.map((e) => e.id) : frame.id,
         );

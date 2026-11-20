@@ -2,6 +2,7 @@ import { IAction, IPageHandler } from '../type';
 import { useInjectEditor } from '../state';
 import modes from '../config/mode';
 import useTool from '../hook/useTool';
+import { localTrial, initLocalFrame } from '../common/localTrial';
 import { Box } from 'pc-render';
 // import BSError from '../common/BSError';
 
@@ -21,16 +22,22 @@ export function execute(): IPageHandler {
 
     async function init() {
         let { state, bsState } = editor;
-        if (!bsState.query.recordId) {
+        if (!localTrial && !bsState.query.recordId) {
             editor.showMsg('error', editor.lang('invalid-query'));
             return;
         }
 
         // set mode
-        editor.setMode(modes.execute);
+        const mode = modes.execute;
+        editor.setMode(localTrial ? { ...mode, ui: { ...mode.ui, rumModel: false } } : mode);
 
         editor.showLoading(true);
         try {
+            if (localTrial) {
+                initLocalFrame(editor);
+                await editor.loadFrame(0, false);
+                return;
+            }
             // get data list by record id
             await loadRecord();
             await loadUserInfo();
@@ -52,9 +59,9 @@ export function execute(): IPageHandler {
             await focusObject();
         } catch (error: any) {
             editor.handleErr(error, editor.lang('load-error'));
+        } finally {
+            editor.showLoading(false);
         }
-
-        editor.showLoading(false);
         if (bsState.query.type === 'modelRun') {
             editor.dataManager.pollDataModelResult();
         }

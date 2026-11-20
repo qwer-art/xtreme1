@@ -73,7 +73,7 @@
                 }}</div>
             </a-button>
             <a-divider type="vertical" style="height: 32px; background-color: #57575c" />
-            <template v-if="editor.state.frameIndex >= 0">
+            <template v-if="!localTrial && editor.state.frameIndex >= 0">
                 <a-button
                     class="basic modify"
                     :disabled="blocking"
@@ -135,6 +135,7 @@
     import { useInjectEditor } from '../../state';
     import useHeader from './useHeader';
     import useFlow from '../../hook/useFlow';
+    import { localTrial } from '../../common/localTrial';
     import useUI from '../../hook/useUI';
     import * as _ from 'lodash';
     import { BsUIType } from '../../config/ui';

@@ -18,10 +18,12 @@ const config = defineConfig({
         },
     },
     plugins: [vue()],
-    alias: [
-        { find: 'pc-render', replacement: path.resolve(__dirname, './src/packages/pc-render') },
-        { find: 'pc-editor', replacement: path.resolve(__dirname, './src/packages/pc-editor') },
-    ],
+    resolve: {
+        alias: [
+            { find: 'pc-render', replacement: path.resolve(__dirname, './src/packages/pc-render') },
+            { find: 'pc-editor', replacement: path.resolve(__dirname, './src/packages/pc-editor') },
+        ],
+    },
 });
 
 module.exports = mergeConfig(config, localConfig);
