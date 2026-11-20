@@ -1,5 +1,5 @@
 import type Editor from './Editor';
-import { utils, SourceType, IFrame, IObjectV2 } from 'pc-editor';
+import { utils, SourceType, ColorModeEnum, IFrame, IObjectV2 } from 'pc-editor';
 
 export const localTrial = import.meta.env.DEV && location.pathname === '/local-trial';
 const frameId = 'ca9a282c9e77460f8360f564131a8af5';
@@ -7,6 +7,12 @@ const storageKey = (id: string) => `xtreme1:local-trial:v1:${id}`;
 
 export function initLocalFrame(editor: Editor) {
     editor.state.config.boxMethod = 'STANDARD';
+    editor.state.config.pointColorMode = ColorModeEnum.PURE;
+    editor.state.config.singleColor = '#b6c4ca';
+    editor.pc.material.setUniforms({
+        colorMode: editor.state.config.pointColorMode,
+        singleColor: editor.state.config.singleColor,
+    });
     Object.assign(editor.bsState, { datasetId: 'local', datasetName: 'nuScenes scene-0061',
         datasetType: 'LIDAR_FUSION', user: { id: 'local', nickname: 'Local' } });
     editor.setClassTypes([['Car', '#54bfff'], ['Pedestrian', '#ffbc57'], ['Cyclist', '#70d18a']]
