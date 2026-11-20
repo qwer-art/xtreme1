@@ -1,7 +1,16 @@
 <template>
     <div class="side-view">
         <div style="height: 100%" ref="dom" @dblclick="onDBLclick"></div>
-        <div class="title1">{{ title }}</div>
+        <div class="title1">{{ title }}
+            <button type="button" class="reset-view" :title="$$('side_reset')"
+                :aria-label="title + ': ' + $$('side_reset')" @click="onDBLclick">
+                <AimOutlined />
+            </button>
+            <button type="button" class="reset-view" :title="expandLabel"
+                :aria-label="title + ': ' + expandLabel" :aria-pressed="expanded" @click="emit('expand')">
+                <FullscreenExitOutlined v-if="expanded" /><FullscreenOutlined v-else />
+            </button>
+        </div>
         <!-- <div class="title2" @click="changeAxis" v-if="axis !== 'z'">{{ title2 }}</div> -->
         <div class="info" v-show="size.length() > 0">
             <template v-if="props.axis === 'z'">
@@ -54,13 +63,16 @@
 </template>
 
 <script setup lang="ts">
-    import { ref, onMounted, onBeforeMount } from 'vue';
+    import { ref, computed, onMounted, onBeforeMount } from 'vue';
     import { axisType } from 'pc-render';
     import { formatNumber as format } from '../../utils';
     import useSideView from './useSideView';
     import useUI from '../../hook/useUI';
     import useContextMenu from '../../hook/useContextMenu';
     import {
+        AimOutlined,
+        FullscreenOutlined,
+        FullscreenExitOutlined,
         RotateLeftOutlined,
         RotateRightOutlined,
         ArrowLeftOutlined,
@@ -73,6 +85,7 @@
     // ***************Props and Emits***************
     interface SideViewProps {
         axis: axisType;
+        expanded: boolean;
     }
 
     const props = withDefaults(defineProps<SideViewProps>(), {
@@ -85,6 +98,8 @@
     let { canEdit } = useUI();
     let { handleContext, clearContext } = useContextMenu();
     const { title, size, onAction, onDBLclick, $$ } = useSideView(dom, props);
+    const expandLabel = computed(() => $$(props.expanded ? 'side_restore' : 'side_expand'));
+    const emit = defineEmits(['expand']);
 
     onMounted(() => {
         if (dom.value) {
@@ -117,10 +132,25 @@
 
         .title1 {
             position: absolute;
-            top: 10px;
+            top: 5px;
             font-size: 12px;
             color: #dee5eb;
             left: 10px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .reset-view {
+            width: 26px;
+            height: 26px;
+            padding: 0;
+            border: none;
+            border-radius: 3px;
+            background: #232729;
+            color: #c6d1d6;
+            cursor: pointer;
+            &:hover, &:focus-visible { background: #424a4d; color: white; }
         }
 
         .tool {

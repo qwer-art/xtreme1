@@ -241,6 +241,7 @@
     // import { getColorRange } from '../../utils';
     import * as _ from 'lodash';
     import { useInjectState, useInjectEditor } from '../../state';
+    import { localTrial, trialDisplay } from '../../common/localTrial';
     // import useRenderConfig from '../hook/useRenderConfig';
     import { RetweetOutlined } from '@ant-design/icons-vue';
     import { PointsMaterial, Event, Image2DRenderView } from 'pc-render';
@@ -278,7 +279,7 @@
         focusOne: false,
         measureOpen: false,
         measureConfig: [] as IMeasure[],
-        backgroudColor: '#000',
+        backgroudColor: localTrial ? trialDisplay.background : `#${pc.backgroundColor.getHexString()}`,
     });
     onMounted(() => {
         onMeasureSwitch();
@@ -305,7 +306,7 @@
         editor.viewManager.delTrackCircle(id);
     }
     function onResetBg() {
-        iState.backgroudColor = '#000';
+        iState.backgroudColor = localTrial ? trialDisplay.background : '#000';
         updateBackgroundColor();
     }
     const updateMeasure = _.debounce((id: number) => {
@@ -349,7 +350,7 @@
     }, 200);
 
     function onResetSize() {
-        config.pointSize = 0.1;
+        config.pointSize = localTrial ? trialDisplay.pointSize : 0.1;
         update('pointSize');
     }
 

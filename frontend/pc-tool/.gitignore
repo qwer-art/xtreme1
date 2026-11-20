@@ -9,6 +9,7 @@ lerna-debug.log*
 
 node_modules
 /public/local-frame/
+/public/local-scene/
 dist
 dist-ssr
 *.local

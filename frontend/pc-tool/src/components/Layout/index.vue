@@ -1,9 +1,9 @@
 <template>
-    <div class="layout-main-container">
+    <div class="layout-main-container" :class="{ 'has-sides': state.config.showSideView }">
         <div
             v-show="!state.config.showSingleImgView && editor.state.imgViews.length > 0"
             :style="{
-                width: `${imgViewWidth}px`,
+                width: imgViewWidth,
                 right: 0,
             }"
             class="img-view-container"
@@ -19,7 +19,7 @@
         </div>
         <div
             class="main-view-container"
-            :style="{ left: `${mainViewLeft}px`, right: `${mainViewRight}px` }"
+            :style="{ left: imgViewWidth, right: sideViewWidth }"
         >
             <div style="position: relative; width: 100%; height: 100%">
                 <slot name="main-view"></slot>
@@ -28,7 +28,7 @@
         <div
             class="side-view-container"
             :style="{
-                width: `${sideViewWidth}px`,
+                width: sideViewWidth,
                 right: 0,
             }"
         >
@@ -62,16 +62,13 @@
     // let toolWidth = 50;
     let info = reactive({
         imgViewWidth: 230,
-        sideViewWidth: 220,
+        sideViewWidth: 0,
         showBottomView: true,
         // operationWidth: 270,
     });
     //** useless now */
     function toggleSideView() {
         state.config.showSideView = !state.config.showSideView;
-        if (info.sideViewWidth < 100) {
-            info.sideViewWidth = 220;
-        }
     }
     function toggleImgView() {
         state.config.showImgView = !state.config.showImgView;
@@ -101,28 +98,10 @@
     const handleImg = ref<HTMLElement | null>(null);
     // let imgViewRight = toolWidth + info.imgViewWidth;
     // let operationRight = 0;
-    let sideViewWidth = computed(() => {
-        let value = 0;
-        if (state.config.showSideView) value += info.sideViewWidth;
-        return value;
-    });
-    let imgViewWidth = computed(() => {
-        let value = 0;
-        if (state.config.showImgView) value += info.imgViewWidth;
-        return value;
-    });
-    let mainViewRight = computed(() => {
-        let value = 0;
-        // if (state.config.showOperationView) value += info.operationWidth;
-        if (state.config.showSideView) value += info.sideViewWidth;
-        return value;
-    });
-
-    let mainViewLeft = computed(() => {
-        let value = 0;
-        if (state.config.showImgView) value += info.imgViewWidth;
-        return value;
-    });
+    const sideViewWidth = computed(() => !state.config.showSideView ? '0px'
+        : info.sideViewWidth ? `min(${info.sideViewWidth}px, 55%)` : 'min(34%, 680px)');
+    const imgViewWidth = computed(() => state.config.showImgView && !state.config.showSingleImgView
+        && editor.state.imgViews.length ? `min(${info.imgViewWidth}px, 22%)` : '0px');
 
     const render = _.throttle(() => {
         editor.pc.renderViews.forEach((view: RenderView) => {
@@ -167,8 +146,8 @@
         if (handleSide.value) {
             addEventListenerResize(handleSide.value, 1, (data: any) => {
                 let width = data.width;
-                info.sideViewWidth = width > 600 ? 600 : width < 100 ? 0 : width;
-                state.config.showSideView = info.sideViewWidth > 100;
+                info.sideViewWidth = width < 100 ? 0 : width;
+                state.config.showSideView = info.sideViewWidth >= 100;
                 render();
             });
         }
@@ -220,6 +199,36 @@
             bottom: 0px;
             z-index: 100;
         }
+
+        @media (max-width: 850px) {
+            &.has-sides .main-view-container, &.has-sides .img-view-container { bottom: 40%; }
+            .main-view-container { right: 0 !important; }
+            .side-view-container {
+                top: auto;
+                width: 100% !important;
+                height: 0;
+                border: none;
+                z-index: 1;
+            }
+            &.has-sides .side-view-container { height: 40%; }
+            .handle-line-side { display: none; }
+            .side-view-container .visible-handle.side {
+                top: 0;
+                left: 50%;
+                transform: translate(-50%, -100%) rotate(90deg);
+                transform-origin: center;
+                padding: 0;
+            }
+        }
+
+        .side-view-container:has(.expanded-side) {
+            inset: 0;
+            width: auto !important;
+            height: auto;
+            z-index: 2;
+            .visible-handle, .handle-line-side { display: none; }
+        }
+        &.has-sides .side-view-container:has(.expanded-side) { height: auto; }
 
         .main-view-container {
             position: absolute;

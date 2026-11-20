@@ -59,6 +59,7 @@ export default class SideRenderView extends Render {
     boxInvertMatrix: THREE.Matrix4 = new THREE.Matrix4();
     zoom: number = 1;
     cameraOffset: THREE.Vector3 = new THREE.Vector3();
+    private overviewGeometryId = -1;
 
     constructor(container: HTMLDivElement, pointCloud: PointCloud, config = {} as any) {
         super(config.name || '');
@@ -86,6 +87,7 @@ export default class SideRenderView extends Render {
         this.renderer.sortObjects = false;
         this.renderer.setPixelRatio(pointCloud.pixelRatio);
         this.renderer.setSize(this.width, this.height);
+        this.renderer.setClearColor(pointCloud.backgroundColor);
         this.container.appendChild(this.renderer.domElement);
 
         this.camera = new THREE.OrthographicCamera(-2, 2, 2, -2, 0, 10);
@@ -119,6 +121,7 @@ export default class SideRenderView extends Render {
                 this.fitObject(object as Box);
             } else {
                 this.object = null;
+                this.overviewGeometryId = -1;
             }
             this.render();
         });
@@ -234,15 +237,40 @@ export default class SideRenderView extends Render {
         // this.render();
     }
 
+    resetView() {
+        this.zoom = 1;
+        this.enableFit = true;
+        if (this.object) this.fitObject();
+        else this.overviewGeometryId = -1;
+        this.render();
+    }
+
+    private fitOverview(points: THREE.Points) {
+        const bounds = new THREE.Box3().setFromObject(points);
+        if (bounds.isEmpty()) return;
+        const center = bounds.getCenter(new THREE.Vector3());
+        const distance = bounds.getSize(new THREE.Vector3()).length() + 1;
+        this.camera.position.copy(this.alignAxis).normalize().multiplyScalar(distance).add(center);
+        this.camera.up.copy(axisUpInfo[this.axis].yAxis.dir);
+        this.camera.lookAt(center);
+        this.camera.updateMatrixWorld();
+        this.projectRect.copy(bounds).applyMatrix4(this.camera.matrixWorldInverse);
+        this.zoom = 1;
+        this.updateCameraProject();
+        this.overviewGeometryId = points.geometry.id;
+    }
+
     updateCameraProject() {
         let { projectRect } = this;
+        if (projectRect.isEmpty()) return;
         let rectWidth = projectRect.max.x - projectRect.min.x;
         let rectHeight = projectRect.max.y - projectRect.min.y;
         let aspect = this.width / this.height;
 
         // debugger
         let cameraW, cameraH;
-        let padding = Math.min(rectWidth, rectHeight) * this.paddingPercent;
+        let padding = this.object ? Math.min(rectWidth, rectHeight) * this.paddingPercent
+            : Math.max(1, Math.max(rectWidth, rectHeight) * 0.08);
         // let padding = (200 * rectWidth) / this.width;
         cameraW = Math.max(rectWidth + padding, (rectHeight + padding) * aspect);
         cameraH = Math.max(rectHeight + padding, (rectWidth + padding) / aspect);
@@ -252,7 +280,7 @@ export default class SideRenderView extends Render {
         this.camera.top = (cameraH / 2) * this.zoom;
         this.camera.bottom = (-cameraH / 2) * this.zoom;
         // debugger
-        this.camera.far = projectRect.max.z - projectRect.min.z;
+        this.camera.far = this.object ? projectRect.max.z - projectRect.min.z : 1 - projectRect.min.z;
         this.camera.updateProjectionMatrix();
 
         // this.camera.position.add(this.cameraOffset);
@@ -269,6 +297,7 @@ export default class SideRenderView extends Render {
             this.width = width;
             this.height = height;
             this.renderer.setSize(this.width, this.height);
+            this.updateCameraProject();
             // this.camera.aspect = this.width / this.height;
             // this.camera.updateProjectionMatrix();
         }
@@ -324,6 +353,8 @@ export default class SideRenderView extends Render {
                 }
             });
         } else {
+            const points = groupPoints.children[0] as THREE.Points;
+            if (this.overviewGeometryId !== points.geometry.id) this.fitOverview(points);
             this.renderer.render(groupPoints, this.camera);
         }
 

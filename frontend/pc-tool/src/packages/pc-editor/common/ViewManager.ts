@@ -28,7 +28,7 @@ export default class ViewManager {
         this.editor = editor;
         this.handleWindowResize();
 
-        if (import.meta.env.DEV) {
+        if (import.meta.env.DEV && location.pathname !== '/local-trial') {
             this.initStats();
         }
     }
@@ -237,11 +237,13 @@ export default class ViewManager {
 
     updateBackgroundColor(color: string) {
         let { pc } = this.editor;
-        let mainRenderView = pc.renderViews.find(
-            (view) => view instanceof MainRenderView,
-        ) as MainRenderView;
-        if (mainRenderView) {
-            mainRenderView.setBackgroundColor(new THREE.Color(color));
-        }
+        pc.backgroundColor.set(color);
+        pc.renderViews.forEach((view) => {
+            if (view instanceof MainRenderView) view.setBackgroundColor(pc.backgroundColor);
+            if (view instanceof SideRenderView) {
+                view.renderer.setClearColor(pc.backgroundColor);
+                view.render();
+            }
+        });
     }
 }

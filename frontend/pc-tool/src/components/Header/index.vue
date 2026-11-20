@@ -1,5 +1,5 @@
 <template>
-    <div class="pc-flow">
+    <div class="pc-flow" :class="{ 'single-trial-frame': localTrial && state.frames.length === 1 }">
         <div class="item-wrap">
             <span :class="blocking ? 'close disable' : 'close'" @click="blocking ? null : onClose()"
                 ><CloseOutlined /><span style="margin-left: 4px">{{ $$('btn-close') }}</span></span
@@ -11,7 +11,7 @@
                 <i class="iconfont icon-a-Jobinformation task-header-icon"></i>
             </div>
         </div>
-        <div class="item-wrap data-index" v-if="!state.isSeriesFrame && state.frames.length > 0">
+        <div class="item-wrap data-index" v-if="!localTrial && !state.isSeriesFrame && state.frames.length > 0">
             <LeftOutlined
                 :class="state.frameIndex > 0 && !blocking ? 'icon' : 'icon disable'"
                 @click="state.frameIndex > 0 && !blocking ? onPre() : null"
@@ -121,11 +121,30 @@
             </template>
         </div>
     </div>
+    <section v-if="localTrial" class="trial-controls" aria-label="标注工具栏">
+        <TrialWorkspace :blocking="blocking" />
+        <TrialCandidates :blocking="blocking" />
+        <div class="trial-shortcuts">
+            <strong>常用快捷键</strong>
+            <span><kbd>F</kbd>{{ state.config.boxMethod === 'AI' ? '拖框拟合' : '三点建框' }}</span>
+            <span><kbd>A/D</kbd><kbd>Q/E</kbd><kbd>W/S</kbd>移框</span>
+            <span><kbd>Z/X</kbd>转向</span><span><kbd>Del</kbd>删除</span>
+            <span><kbd>Ctrl+Z</kbd>撤销</span><span><kbd>Ctrl+S</kbd>保存</span>
+        </div>
+        <div class="trial-methods" role="group" aria-label="辅助标注方式">
+            <strong>辅助标注</strong>
+            <button v-for="method in trialMethods" :key="method.id" type="button"
+                :aria-pressed="state.config.boxMethod === method.id" :disabled="blocking || state.status === StatusType.Create"
+                @click="state.config.boxMethod = method.id">{{ method.label }}</button>
+            <span class="trial-status" role="status">{{ state.status === StatusType.Create ? '建框中' : '就绪' }}</span>
+        </div>
+    </section>
 </template>
 
 <script setup lang="ts">
     // import { PointCloud } from '../lib';
     import { computed, onMounted } from 'vue';
+    import { StatusType } from 'pc-editor';
     import {
         RightOutlined,
         LeftOutlined,
@@ -134,6 +153,8 @@
     } from '@ant-design/icons-vue';
     import { useInjectEditor } from '../../state';
     import useHeader from './useHeader';
+    import TrialWorkspace from './TrialWorkspace.vue';
+    import TrialCandidates from './TrialCandidates.vue';
     import useFlow from '../../hook/useFlow';
     import { localTrial } from '../../common/localTrial';
     import useUI from '../../hook/useUI';
@@ -163,6 +184,7 @@
     let { init } = useFlow();
     let editor = useInjectEditor();
     let { state, bsState } = editor;
+    const trialMethods = [{ id: 'STANDARD', label: '手工三点框' }, { id: 'AI', label: 'AI Box · 点云拟合' }] as const;
 
     onMounted(() => {
         init();
@@ -170,10 +192,40 @@
 </script>
 
 <style lang="less">
+    .trial-layout .pc-flow { height: 48px; }
+    .trial-controls {
+        background: #f4f6f7;
+        color: #17252a;
+        padding: 8px 14px;
+        display: grid;
+        gap: 7px;
+        font-family: "Noto Sans CJK SC", "WenQuanYi Micro Hei", sans-serif;
+        font-size: 18px;
+        line-height: 1.4;
+        .trial-shortcuts, .trial-methods { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 12px; }
+        strong { min-width: 5em; font-weight: 700; }
+        .trial-shortcuts span { display: inline-flex; gap: 4px; align-items: center; white-space: nowrap; }
+        kbd { font: 600 16px/1.5 monospace; color: #17252a; background: white; border: 1px solid #9daeb5; border-bottom-width: 2px; padding: 0 5px; border-radius: 3px; }
+        button { font: inherit; min-height: 36px; padding: 3px 12px; border: 1px solid #9caeb6; background: white; color: #20333a; border-radius: 4px; cursor: pointer; }
+        button[aria-pressed='true'] { background: #cbefdf; color: #0c462e; border-color: #42806a; font-weight: 700; }
+        button:focus-visible { outline: 2px solid #0066a1; outline-offset: 2px; }
+        .trial-status { color: #40565e; }
+        @media (max-width: 520px) { padding: 6px 8px; .trial-shortcuts, .trial-methods { gap: 4px 8px; } strong { min-width: auto; } }
+    }
     .pc-flow {
         height: 100%;
         display: flex;
         justify-content: space-between;
+        @media (max-width: 520px) {
+            &.single-trial-frame {
+                .data-index, .ant-divider { display: none; }
+                .close { white-space: nowrap; }
+                .task-header-info { margin-left: 4px; padding: 2px 6px; }
+                .task-header-name { max-width: 80px; padding-right: 0; border: 0; }
+                .task-header-icon { display: none; }
+                .item-wrap .basic-btn { padding: 0 4px; }
+            }
+        }
         .task-header-info {
             border-radius: 16px;
             height: 28px;

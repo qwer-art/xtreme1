@@ -34,7 +34,7 @@ export function execute(): IPageHandler {
         editor.showLoading(true);
         try {
             if (localTrial) {
-                initLocalFrame(editor);
+                await initLocalFrame(editor);
                 await editor.loadFrame(0, false);
                 return;
             }

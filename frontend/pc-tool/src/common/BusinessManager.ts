@@ -10,6 +10,8 @@ import {
 import Editor from './Editor';
 import * as api from '../api';
 import { localTrial, readLocalObjects } from './localTrial';
+import { configureTrialCreation } from './trialAnnotations';
+import { scans } from './trialScene';
 
 export default class BusinessManager extends BaseBusinessManager {
     editor: Editor;
@@ -20,9 +22,15 @@ export default class BusinessManager extends BaseBusinessManager {
 
     async loadFrameConfig(data: IFrame): Promise<IDataResource> {
         if (localTrial) {
-            const response = await fetch('/local-frame/views.json');
-            if (!response.ok) throw new Error(`views.json: HTTP ${response.status}`);
-            return { pointsUrl: data.pointsUrl, pointsData: {}, viewConfig: await response.json(),
+            const scan = scans.find(item => item.id === data.id);
+            if (!scan) throw new Error(`Unknown local scan: ${data.id}`);
+            let viewConfig = [];
+            if (scan.viewsUrl) {
+                const response = await fetch(scan.viewsUrl);
+                if (!response.ok) throw new Error(`${scan.viewsUrl}: HTTP ${response.status}`);
+                viewConfig = await response.json();
+            }
+            return { pointsUrl: scan.pointsUrl, pointsData: {}, viewConfig,
                 time: 0, name: 'scene-0061' };
         }
         const regLidar = new RegExp(/point(_?)cloud/i);
@@ -67,7 +75,10 @@ export default class BusinessManager extends BaseBusinessManager {
         classificationMap: Record<string, IObject[]>;
         queryTime: string;
     }> {
-        if (localTrial) return readLocalObjects(frame);
+        if (localTrial) {
+            configureTrialCreation(this.editor);
+            return readLocalObjects(frame);
+        }
         let data = await api.getDataObjectBatch(
             Array.isArray(frame) ? frame.map((e) => e.id) : frame.id,
         );

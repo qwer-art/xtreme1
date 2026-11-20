@@ -70,10 +70,7 @@ export default function useSideView(dom: Ref<HTMLDivElement | null>, props: Side
     }
 
     function onDBLclick() {
-        view.zoom = 1;
-        view.enableFit = true;
-        view.fitObject();
-        view.render();
+        view.resetView();
     }
 
     function onAction(name: IActionName) {

@@ -164,6 +164,7 @@
     import { PointsMaterial } from 'pc-render';
     import * as _ from 'lodash';
     import { useInjectEditor } from '../../state';
+    import { localTrial, trialDisplay } from '../../common/localTrial';
     import * as locale from './lang';
     import { utils as renderUtils } from 'pc-render';
 
@@ -318,7 +319,7 @@
     function onResetColor() {
         const mode = config.pointColorMode;
         if (mode === ColorModeEnum.PURE) {
-            config.singleColor = '#87abff';
+            config.singleColor = localTrial ? trialDisplay.points : '#87abff';
             asyncUpdate('singleColor');
         } else if ([ColorModeEnum.HEIGHT, ColorModeEnum.VELOCITY].includes(mode)) {
             config.edgeColor = ['#000dff', '#ff0000'];

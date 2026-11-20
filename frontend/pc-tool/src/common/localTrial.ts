@@ -1,41 +1,27 @@
 import type Editor from './Editor';
-import { utils, SourceType, ColorModeEnum, IFrame, IObjectV2 } from 'pc-editor';
+import { ColorModeEnum } from 'pc-editor';
+import { loadTrialScene, setSceneFilter } from './trialScene';
 
 export const localTrial = import.meta.env.DEV && location.pathname === '/local-trial';
-const frameId = 'ca9a282c9e77460f8360f564131a8af5';
-const storageKey = (id: string) => `xtreme1:local-trial:v1:${id}`;
+export const trialDisplay = { background: '#2b3031', points: '#b3bfb3', pointSize: 2 };
 
-export function initLocalFrame(editor: Editor) {
+export async function initLocalFrame(editor: Editor) {
+    await loadTrialScene();
     editor.state.config.boxMethod = 'STANDARD';
     editor.state.config.pointColorMode = ColorModeEnum.PURE;
-    editor.state.config.singleColor = '#b6c4ca';
+    editor.state.config.singleColor = trialDisplay.points;
+    editor.state.config.pointSize = trialDisplay.pointSize;
+    editor.viewManager.updateBackgroundColor(trialDisplay.background);
     editor.pc.material.setUniforms({
         colorMode: editor.state.config.pointColorMode,
         singleColor: editor.state.config.singleColor,
+        pointSize: editor.state.config.pointSize,
     });
     Object.assign(editor.bsState, { datasetId: 'local', datasetName: 'nuScenes scene-0061',
         datasetType: 'LIDAR_FUSION', user: { id: 'local', nickname: 'Local' } });
     editor.setClassTypes([['Car', '#54bfff'], ['Pedestrian', '#ffbc57'], ['Cyclist', '#70d18a']]
         .map(([name, color]) => ({ id: name, name, label: name, color, attrs: [] })));
-    editor.setFrames([{ id: frameId, datasetId: 'local', pointsUrl: '/local-frame/points.pcd',
-        queryTime: '', loadState: '', needSave: false, classifications: [], dataStatus: 'VALID',
-        annotationStatus: 'NOT_ANNOTATED', skipped: false, sources: [{ name: 'Without Task',
-            sourceId: editor.state.config.withoutTaskId, sourceType: SourceType.DATA_FLOW }] }]);
+    setSceneFilter(editor, 'all');
 }
 
-interface LocalObject { frontId: string; classId: string; classAttributes: IObjectV2 }
-
-export function saveLocalFrames(frames: { dataId: string; objects: LocalObject[] }[]) {
-    frames.forEach(frame => localStorage.setItem(storageKey(frame.dataId), JSON.stringify(frame)));
-}
-
-export function readLocalObjects(frame: IFrame | IFrame[]) {
-    const objectsMap = Object.fromEntries((Array.isArray(frame) ? frame : [frame]).map(item => {
-        const saved = localStorage.getItem(storageKey(item.id));
-        const objects: LocalObject[] = saved ? JSON.parse(saved).objects : [];
-        return [item.id, objects.map(object => utils.translateToObject({
-            ...object.classAttributes, frontId: object.frontId,
-        }))];
-    }));
-    return { objectsMap, classificationMap: {}, queryTime: new Date().toISOString() };
-}
+export { readLocalObjects, saveLocalFrames } from './trialAnnotations';

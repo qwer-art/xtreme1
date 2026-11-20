@@ -11,6 +11,10 @@ const config = defineConfig({
         port: 3200,
         // api proxy when development
         proxy: {
+            '/trial-model': {
+                target: 'http://127.0.0.1:3211',
+                rewrite: (requestPath) => requestPath.replace(/^\/trial-model(?=\/|$)/, ''),
+            },
             '/api': {
                 changeOrigin: true,
                 target: 'http://localhost:8190',

@@ -46,6 +46,7 @@ export default class MainRenderView extends Render {
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.renderer.setPixelRatio(pointCloud.pixelRatio);
         this.renderer.setSize(this.width, this.height);
+        this.backgroundColor.copy(pointCloud.backgroundColor);
         this.renderer.setClearColor(this.backgroundColor);
         this.renderer.sortObjects = false;
         this.renderer.autoClear = false;

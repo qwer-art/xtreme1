@@ -1,6 +1,6 @@
 <template>
     <div class="pc-editor">
-        <div class="pc-editor-layout">
+        <div class="pc-editor-layout" :class="{ 'trial-layout': localTrial }">
             <div class="business-container"><Header /></div>
             <div class="content-container-wrap">
                 <div class="content-container">
@@ -22,6 +22,7 @@
     import { reactive, onMounted } from 'vue';
 
     import { useProvideEditor } from '../../state';
+    import { localTrial } from '../../common/localTrial';
 
     import Header from '../Header/index.vue';
     import Operation from '../Operation/index.vue';
@@ -49,6 +50,12 @@
         background: #3a393e;
 
         .pc-editor-layout {
+            &.trial-layout {
+                height: 100%;
+                display: grid;
+                grid-template-rows: auto minmax(0, 1fr);
+                .business-container, .content-container-wrap { position: relative; inset: auto; height: auto; min-width: 0; }
+            }
             .business-container {
                 position: absolute;
                 top: 0px;
@@ -97,6 +104,18 @@
                 padding-left: 6px;
                 padding-right: 6px;
                 border-left: 1px solid #545454;
+            }
+
+            @media (max-width: 850px) {
+                .main-container { right: 0; bottom: 18%; }
+                .tool-container { bottom: 18%; }
+                .operation-container {
+                    top: 82%;
+                    width: 100%;
+                    overflow: auto;
+                    border-left: 0;
+                    border-top: 1px solid #545454;
+                }
             }
         }
     }
