@@ -1,30 +1,48 @@
 <template>
     <fieldset class="trial-workspace" :disabled="disabled" aria-label="扫描帧与标注">
-        <label>扫描 <select data-testid="trial-mode" :value="mode" @change="changeMode">
+        <div class="trial-frame-line">
+        <div class="trial-frame-tools" role="group" aria-label="帧导航">
+        <label>帧 <select data-testid="trial-mode" :value="mode" @change="changeMode">
             <option value="key">图像配对帧</option><option value="all">全部扫描</option>
         </select></label>
         <div class="trial-pager">
-            <button type="button" title="上一帧" data-testid="trial-prev" :disabled="index <= 0" @click="navigate(index - 1)">‹</button>
+            <button type="button" title="上一帧" aria-label="上一帧" data-testid="trial-prev" :disabled="index <= 0" @click="navigate(index - 1)"><LeftOutlined /></button>
             <input data-testid="trial-index" aria-label="帧号" type="number" min="1" :max="count" :value="index + 1" @change="changeIndex" @keydown.enter.prevent="($event.target as HTMLInputElement).blur()" />
             <span>/ {{ count }}</span>
-            <button type="button" title="下一帧" data-testid="trial-next" :disabled="index + 1 >= count" @click="navigate(index + 1)">›</button>
+            <button type="button" title="下一帧" aria-label="下一帧" data-testid="trial-next" :disabled="index + 1 >= count" @click="navigate(index + 1)"><RightOutlined /></button>
         </div>
-        <time title="扫描时间戳 (µs)">{{ scan?.timestamp }} µs</time>
+        </div>
+        <div class="trial-more-tools" role="group" aria-label="标注选项">
+            <button v-for="item in panels" :key="item.id" type="button" :aria-expanded="panel === item.id" :aria-controls="`trial-options-${item.id}`" @click="panel = panel === item.id ? '' : item.id">
+                <component :is="item.icon" aria-hidden="true" /> {{ item.label }}<span v-if="item.id === 'overlay' && overlay" class="overlay-count">±{{ radius }}</span>
+            </button>
+        </div>
+        <div class="trial-frame-status" aria-label="当前帧状态">
+            <time v-if="scan" title="扫描时间戳（微秒）"><ClockCircleOutlined aria-hidden="true" /> {{ scan.timestamp }} µs</time>
+            <output :title="selection ? `框 ${selection.box.bbox_id} · 轨迹 ${selection.box.track_id}` : ''">{{ selection ? '已选框' : '未选框' }}</output>
+        </div>
+        </div>
+        <div v-show="panel === 'overlay'" id="trial-options-overlay" class="trial-options" role="group" aria-label="邻帧显示">
         <label><input v-model="overlay" data-testid="trial-overlay" type="checkbox" /> 叠加邻帧</label>
         <label>半径 <input data-testid="trial-radius" v-model.number="radius" type="number" min="1" max="8" :disabled="!overlay" @change="radius = Math.max(1, Math.min(8, Math.floor(Number(radius) || 1)))" /></label>
+        </div>
+        <div v-show="panel === 'track'" id="trial-options-track" class="trial-options" role="group" aria-label="跨帧轨迹">
         <button type="button" data-testid="trial-copy" :disabled="!departed || departed.scan_id === id" @click="copy">复制上一选框</button>
         <label>轨迹 <input data-testid="trial-track" v-model="track" list="trial-tracks" @focus="refreshTracks" /></label>
         <datalist id="trial-tracks"><option v-for="item in tracks" :key="item" :value="item" /></datalist>
         <button type="button" data-testid="trial-assign" :disabled="!selection || !track.trim()" @click="assign">分配轨迹</button>
-        <button type="button" data-testid="trial-export" @click="download">导出 JSON</button>
-        <label class="trial-file">导入 JSON<input type="file" accept=".json,application/json" data-testid="trial-import" @change="upload" /></label>
-        <output :title="selection ? `框 ${selection.box.bbox_id} · 轨迹 ${selection.box.track_id}` : ''">{{ selection ? '已选框' : '未选框' }}</output>
+        </div>
+        <div v-show="panel === 'file'" id="trial-options-file" class="trial-options" role="group" aria-label="标注文件">
+        <button type="button" data-testid="trial-export" @click="download"><ExportOutlined aria-hidden="true" /> 导出 JSON</button>
+        <label class="trial-file"><ImportOutlined aria-hidden="true" /> 导入 JSON<input type="file" accept=".json,application/json" data-testid="trial-import" @change="upload" /></label>
+        </div>
         <span v-if="error" role="alert">{{ error }}</span>
     </fieldset>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
+import { ApartmentOutlined, BlockOutlined, ClockCircleOutlined, ExportOutlined, FolderOpenOutlined, ImportOutlined, LeftOutlined, RightOutlined } from '@ant-design/icons-vue';
 import { Event } from 'pc-editor';
 import { useInjectEditor } from '../../state';
 import { scans, setSceneFilter } from '../../common/trialScene';
@@ -33,6 +51,12 @@ import { assignTrack, captureSelected, copySelected, exportAnnotations, importAn
 import type { TrialSnapshot } from '../../common/trialAnnotations';
 
 const props = defineProps<{ blocking: boolean }>();
+const panels = [
+    { id: 'overlay', label: '邻帧', icon: BlockOutlined },
+    { id: 'track', label: '轨迹', icon: ApartmentOutlined },
+    { id: 'file', label: '文件', icon: FolderOpenOutlined },
+] as const;
+const panel = ref<'' | typeof panels[number]['id']>('');
 const editor = useInjectEditor();
 const mode = ref<'all' | 'key'>('key');
 const index = computed(() => editor.state.frameIndex);
@@ -141,7 +165,20 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.trial-workspace { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 10px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.trial-workspace { min-width: 0; margin: 0; padding: 0; border: 0; }
+.trial-frame-line, .trial-frame-tools, .trial-more-tools, .trial-frame-status, .trial-options { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.trial-frame-line { gap: 5px 16px; }
+.trial-more-tools { padding-inline-start: 12px; border-inline-start: 1px solid #585b64; }
+.trial-more-tools button[aria-expanded=true] { background: #25465a; border-color: #73b4d4; }
+.trial-frame-status { color: #bcc2ce; margin-inline-start: auto; font-size: var(--trial-secondary-font); font-variant-numeric: tabular-nums; }
+.trial-frame-status output { padding-inline-start: 8px; border-inline-start: 1px solid #585b64; }
+.trial-options { margin-top: 5px; padding: 5px 8px; border-inline-start: 3px solid #73b4d4; background: #30343b; }
+.overlay-count { color: #a5e4eb; }
+@media (max-width: 680px) {
+    .trial-frame-line { gap: 4px 8px; }
+    .trial-frame-status { font-size: 14px; }
+    .trial-more-tools { padding-inline-start: 0; border: 0; }
+}
 .trial-workspace label, .trial-pager { display: inline-flex; align-items: center; gap: 4px; }
 .trial-workspace input, .trial-workspace select { color: inherit; font: inherit; }
 .trial-workspace input[type=number] { width: 4em; }
@@ -150,5 +187,5 @@ onBeforeUnmount(() => {
 .trial-file input { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; }
 .trial-file:focus-within { outline: 2px solid #0066a1; }
 .trial-workspace output { font-size: var(--trial-secondary-font); overflow-wrap: anywhere; }
-.trial-workspace [role=alert] { color: #962e20; }
+.trial-workspace [role=alert] { color: #ffb6a1; }
 </style>

@@ -95,8 +95,6 @@ export default class Image2DRenderProxy {
         let { context, renderer } = this;
         this.renderTimer = 0;
 
-        if (!this.needRender()) return;
-
         // console.log('proxy renderFrame');
 
         this.updateSize();
@@ -112,6 +110,7 @@ export default class Image2DRenderProxy {
 
         this.renderN = 0;
         this.views.forEach((view) => {
+            if (!view.isEnable()) return;
             context.save();
             view.renderFrame();
             context.restore();

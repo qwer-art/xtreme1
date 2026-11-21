@@ -36,10 +36,12 @@
     import { FullscreenOutlined, EyeOutlined } from '@ant-design/icons-vue';
     import useInjectProxy from './useProxy';
     import { localTrial } from '../../common/localTrial';
+    import { attachTrialProjection } from './trialProjection';
 
     // ***************Props and Emits***************
     interface ImgViewProps {
         imgIndex: number;
+        thumbnail?: () => HTMLImageElement | undefined;
     }
 
     const props = withDefaults(defineProps<ImgViewProps>(), {
@@ -68,7 +70,8 @@
                 actions: ['render-2d-shape'],
                 proxy: renderProxy,
             });
-            view.renderBox = state.config.projectMap3d;
+            if (localTrial) attachTrialProjection(view, props.thumbnail);
+            view.renderBox = state.config.projectMap3d && state.config.renderProjectBox;
             view.renderRect = state.config.projectPoint4;
             view.renderBox2D = state.config.projectPoint8;
 

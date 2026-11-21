@@ -6,10 +6,14 @@
                     <TrialPrelabel v-model:model="model" @completed="refreshKey = $event" />
                 </Teleport>
                 <Teleport to="#trial-assist-controls">
-                    <strong>辅助标注</strong>
-                    <label class="sam-switch"><input type="checkbox" data-testid="point-sam-toggle" v-model="samActive" :disabled="blocking" /> Point-SAM</label>
-                    <button v-for="method in methods" :key="method.id" type="button" :aria-pressed="!samActive && editor.state.config.boxMethod === method.id" :disabled="blocking"
-                        @click="samActive = false; editor.state.config.boxMethod = method.id">{{ method.label }}</button>
+                    <button type="button" class="assist-picker" aria-controls="trial-assist-options" :aria-expanded="assistOpen" @click="assistOpen = !assistOpen">
+                        辅助标注 · {{ samActive ? 'Point-SAM' : methods.find(method => method.id === editor.state.config.boxMethod)?.label }} <DownOutlined aria-hidden="true" />
+                    </button>
+                    <div v-show="assistOpen" id="trial-assist-options" class="trial-assist-options">
+                        <label class="sam-switch"><input type="checkbox" data-testid="point-sam-toggle" v-model="samActive" :disabled="blocking" /> Point-SAM</label>
+                        <button v-for="method in methods" :key="method.id" type="button" :aria-pressed="!samActive && editor.state.config.boxMethod === method.id" :disabled="blocking"
+                            @click="samActive = false; editor.state.config.boxMethod = method.id">{{ method.label }}</button>
+                    </div>
                 </Teleport>
             </template>
             <nav class="review-tabs" aria-label="右侧面板">
@@ -32,6 +36,7 @@
 
 <script setup lang="ts">
     import { computed, onMounted, ref, watch } from 'vue';
+    import { DownOutlined } from '@ant-design/icons-vue';
     import { useInjectEditor } from '../../state';
     import { localTrial } from '../../common/localTrial';
     import { useEditorBlocking } from '../Header/useHeader';
@@ -47,6 +52,7 @@
     const emit = defineEmits<{ (event: 'show-rail'): void }>();
     const editor = useInjectEditor(), blocking = useEditorBlocking();
     const mounted = ref(false), reviewing = ref(true), samActive = ref(false);
+    const assistOpen = ref(false);
     const model = ref('CenterPoint'), prelabel = computed(() => model.value === 'CenterPoint');
     const refreshKey = ref('');
     const methods = [{ id: 'STANDARD', label: '手工三点框' }, { id: 'AI', label: 'AI Box · 点云拟合' }] as const;

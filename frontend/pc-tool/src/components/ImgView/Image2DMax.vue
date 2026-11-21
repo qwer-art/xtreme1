@@ -73,6 +73,7 @@
     import useContextMenu from '../../hook/useContextMenu';
     import { localTrial } from '../../common/localTrial';
     import { isTrialFrameImage } from './trialFrameImage';
+    import { attachTrialProjection } from './trialProjection';
 
     // ***************Props and Emits***************
 
@@ -115,6 +116,7 @@
                 name: state.config.singleViewPrefix,
                 actions: ['select', 'render-2d-shape', 'create-obj', 'edit-2d', 'transform-2d', 'render-2d-track'],
             });
+            if (localTrial) attachTrialProjection(view);
             pc.addRenderView(view);
             // view.lineWidth = 2;
             view.toggle(false);

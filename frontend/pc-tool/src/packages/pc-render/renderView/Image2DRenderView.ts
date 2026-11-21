@@ -88,6 +88,8 @@ export default class Image2DRenderView extends Render {
     renderPoints: boolean = false;
     renderRect: boolean = true;
     renderBox2D: boolean = true;
+    renderPreviewBoxes?: () => void;
+    renderThumbnail?: () => void;
     // render config
     lineWidth: number = 1;
 
@@ -438,6 +440,7 @@ export default class Image2DRenderView extends Render {
         this.clientRect = rect;
 
         let needRender =
+            rect.width > 0 && rect.height > 0 &&
             rect.bottom >= clientRect.top &&
             rect.top <= clientRect.bottom &&
             rect.left <= clientRect.right &&
@@ -460,6 +463,7 @@ export default class Image2DRenderView extends Render {
 
     renderFrame() {
         // console.log('renderFrame');
+        this.renderThumbnail?.();
         if (!this.isViewRenderable()) return;
 
         this.dispatchEvent({ type: Event.RENDER_BEFORE });
@@ -480,12 +484,12 @@ export default class Image2DRenderView extends Render {
 
         let { groupPoints, selection, selectColor } = this.pointCloud;
         let { renderer } = this.proxy;
-        let selection3Ds = selection.filter((e) => e instanceof THREE.Object3D);
         let object3Ds = this.get3DObject();
+        const selected = this.renderPoints && object3Ds.find(box => box.visible && selection.includes(box));
+        const groupPoint = groupPoints?.children[0] as THREE.Points;
 
-        if (this.renderBox && this.renderPoints && selection3Ds.length > 0) {
-            let groupPoint = groupPoints.children[0] as THREE.Points;
-            let box = selection[0] as Box;
+        if (selected && groupPoint) {
+            let box = selected as Box;
             box.updateMatrixWorld();
             if (!box.geometry.boundingBox) box.geometry.computeBoundingBox();
 
@@ -516,14 +520,13 @@ export default class Image2DRenderView extends Render {
             // groupPoint.material = oldMaterial;
         }
 
-        if (this.renderBox) {
-            object3Ds.forEach((box) => {
+        object3Ds.forEach((box) => {
+            if (box.visible) {
+                box.updateWorldMatrix(true, false);
                 this.renderBoxData(box as Box);
-            });
-            selection3Ds.forEach((box) => {
-                this.renderBoxData(box as Box);
-            });
-        }
+            }
+        });
+        this.renderPreviewBoxes?.();
     }
 
     setContextTransform() {

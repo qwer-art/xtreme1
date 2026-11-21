@@ -1,8 +1,8 @@
 <template>
     <div class="pc-flow">
         <div class="item-wrap">
-            <span :class="blocking ? 'close disable' : 'close'" @click="blocking ? null : onClose()"
-                ><CloseOutlined /><span style="margin-left: 4px">{{ $$('btn-close') }}</span></span
+            <span :class="blocking ? 'close disable' : 'close'" :title="$$('btn-close')" @click="blocking ? null : onClose()"
+                ><CloseOutlined /><span class="close-label" style="margin-left: 4px">{{ $$('btn-close') }}</span></span
             >
             <div class="task-header-info">
                 <span :title="iState.dataName || ''" class="task-header-name">{{
@@ -44,6 +44,7 @@
             <a-button
                 class="basic-btn"
                 v-if="has(BsUIType.flowSave)"
+                :title="$$('btn-save')" :aria-label="$$('btn-save')"
                 :disabled="blocking"
                 size="large"
                 :loading="bsState.saving"
@@ -53,14 +54,18 @@
                 <div class="title">{{ $$('btn-save') }}</div>
             </a-button>
             <!-- shortcut -->
-            <a-button class="basic-btn" size="large" :disabled="blocking" @click="onHelp">
+            <a-button class="basic-btn" size="large" :disabled="blocking"
+                :title="localTrial ? '快捷键' : $$('btn-shortcut')" :aria-label="localTrial ? '快捷键' : $$('btn-shortcut')"
+                :aria-expanded="localTrial ? shortcutsOpen : undefined"
+                :aria-controls="localTrial ? 'trial-shortcuts' : undefined"
+                @click="localTrial ? shortcutsOpen = !shortcutsOpen : onHelp()">
                 <template #icon
                     ><i style="font-size: 16px" class="iconfont icon-help"></i
                 ></template>
-                <div class="title">{{ $$('btn-shortcut') }}</div>
+                <div class="title">{{ localTrial ? '快捷键' : $$('btn-shortcut') }}</div>
             </a-button>
             <!-- full screen -->
-            <a-button class="basic-btn" size="large" @click="onFullScreen">
+            <a-button class="basic-btn" size="large" :title="iState.fullScreen ? $$('btn-full-exit') : $$('btn-full')" :aria-label="iState.fullScreen ? $$('btn-full-exit') : $$('btn-full')" @click="onFullScreen">
                 <template #icon>
                     <i
                         style="font-size: 16px"
@@ -72,7 +77,8 @@
                     iState.fullScreen ? $$('btn-full-exit') : $$('btn-full')
                 }}</div>
             </a-button>
-            <a-divider type="vertical" style="height: 32px; background-color: #57575c" />
+            <button v-if="localTrial" type="button" class="trial-rail-toggle" title="审核栏" aria-label="审核栏" data-testid="trial-rail-toggle" :aria-expanded="railOpen" @click="$emit('toggle-rail')"><UnorderedListOutlined /></button>
+            <a-divider v-else type="vertical" style="height: 32px; background-color: #57575c" />
             <template v-if="!localTrial && editor.state.frameIndex >= 0">
                 <a-button
                     class="basic modify"
@@ -124,26 +130,27 @@
     <section v-if="localTrial" class="trial-controls" aria-label="标注工具栏">
         <TrialWorkspace :blocking="blocking" />
         <div class="trial-model-bar">
-            <div id="trial-prelabel-controls" class="trial-methods"></div>
-            <div id="trial-assist-controls" class="trial-methods"></div>
-            <button type="button" class="trial-rail-toggle" data-testid="trial-rail-toggle" :aria-expanded="railOpen" @click="$emit('toggle-rail')">审核栏</button>
+            <div id="trial-prelabel-controls" class="trial-methods" role="group" aria-label="整段预标注"></div>
+            <div id="trial-assist-controls" class="trial-methods" role="group" aria-label="单目标辅助标注"></div>
         </div>
-        <div class="trial-shortcuts">
+        <div v-show="shortcutsOpen" id="trial-shortcuts" class="trial-shortcuts">
             <strong>常用快捷键</strong>
             <span><kbd>F</kbd>{{ state.config.boxMethod === 'AI' ? '拖框拟合' : '三点建框' }}</span>
             <span><kbd>A/D</kbd><kbd>Q/E</kbd><kbd>W/S</kbd>移框</span>
             <span><kbd>Z/X</kbd>转向</span><span><kbd>Del</kbd>删除</span>
             <span><kbd>Ctrl+Z</kbd>撤销</span><span><kbd>Ctrl+S</kbd>保存</span>
+            <button type="button" @click="onHelp">完整快捷键表</button>
         </div>
     </section>
 </template>
 
 <script setup lang="ts">
     // import { PointCloud } from '../lib';
-    import { onMounted } from 'vue';
+    import { onMounted, ref } from 'vue';
     import {
         RightOutlined,
         LeftOutlined,
+        UnorderedListOutlined,
         SaveOutlined,
         CloseOutlined,
     } from '@ant-design/icons-vue';
@@ -182,6 +189,8 @@
     defineProps<{ railOpen: boolean }>();
     defineEmits<{ (event: 'toggle-rail'): void }>();
 
+    const shortcutsOpen = ref(false);
+
     onMounted(() => {
         init();
     });
@@ -191,6 +200,13 @@
     .trial-layout { --trial-ui-font: 18px; --trial-secondary-font: 16px; }
     .trial-layout .pc-flow { height: 44px; }
     .trial-layout .pc-flow .item-wrap .basic-btn .title, .trial-layout .pc-flow .task-header-name { font-size: var(--trial-secondary-font); }
+    .trial-rail-toggle { display: none; }
+    @media (max-width: 680px) {
+        .trial-layout .pc-flow .trial-rail-toggle { display: inline-grid; place-items: center; height: 32px; min-width: 32px; background: transparent; color: #dce0e8; border: 0; cursor: pointer; }
+        .trial-layout .pc-flow .trial-rail-toggle[aria-expanded=true] { color: #95ceff; background: #31485b; }
+        .trial-layout .pc-flow .close-label, .trial-layout .pc-flow .basic-btn .title { display: none; }
+        .trial-layout .pc-flow .basic-btn { min-width: 32px; }
+    }
     .trial-controls {
         background: #26282e;
         color: #e3e5e9;
@@ -201,16 +217,19 @@
         font-size: var(--trial-ui-font);
         line-height: 1.4;
         .trial-model-bar, .trial-shortcuts, .trial-methods { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
-        .trial-model-bar { border-block: 1px solid #44474e; padding-block: 4px; gap: 4px 18px; }
+        .trial-model-bar { border-top: 1px solid #44474e; padding-top: 5px; gap: 5px 16px; }
+        #trial-assist-controls { border-inline-start: 1px solid #585b64; padding-inline-start: 12px; }
+        #trial-prelabel-controls output { font-size: var(--trial-secondary-font); }
+        .trial-assist-options { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
+        .assist-picker[aria-expanded=true] { border-color: #73b4d4; }
         .trial-shortcuts { color: #dce0e8; font-size: var(--trial-secondary-font); }
         strong { font-weight: 600; }
         .trial-shortcuts span { display: inline-flex; gap: 4px; align-items: center; white-space: nowrap; }
         kbd { font: 600 1em/1.4 monospace; border: 1px solid #777e8a; padding: 0 4px; border-radius: 3px; }
-        .trial-rail-toggle { display: none; }
         @media (max-width: 680px) {
-            .trial-rail-toggle { display: inline-block; }
-            .trial-workspace, .trial-shortcuts { flex-wrap: nowrap; overflow-x: auto; }
-            .trial-workspace > *, .trial-shortcuts > * { flex: none; }
+            #trial-assist-controls { padding-inline-start: 0; border: 0; }
+            max-height: 36vh;
+            overflow-y: auto;
         }
     }
     .pc-flow {
@@ -222,8 +241,10 @@
                 .data-index, .ant-divider { display: none; }
                 overflow-x: auto;
                 .item-wrap { flex: none; }
+                .item-wrap:first-child { flex: 1 1 0; min-width: 0; }
+                .close { flex-shrink: 0; }
                 .close { white-space: nowrap; }
-                .task-header-info { margin-left: 4px; padding: 2px 6px; }
+                .task-header-info { min-width: 0; overflow: hidden; margin-left: 4px; padding: 2px 6px; }
                 .task-header-name { max-width: 80px; padding-right: 0; border: 0; }
                 .task-header-icon { display: none; }
                 .item-wrap .basic-btn { padding: 0 4px; }
