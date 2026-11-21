@@ -50,11 +50,33 @@ Choose a camera thumbnail to change the main image; double-click the image for a
 
 Camera images show the visible LiDAR boxes using each camera's calibration. Compare a box against the object in the main image, the six desktop thumbnails or the enlarged view. Adjusting a box updates the outline; hiding a candidate category removes its outlines in both views. Unpaired scans have no image to project onto.
 
+Use 字号 next to the scene name to set the toolbar text to 18, 24 (default), 30 or 36 px. This browser remembers the setting without changing scene zoom.
+
 Use the frame arrows or frame number to navigate. Open 邻帧 for overlay and radius, 轨迹 to copy the previous selection or assign a track, and 文件 to import or export JSON. The timestamp and selection are read-only. 快捷键 opens the key reference; on a phone the list icon in the top bar opens or closes review.
 
 In 待审核, click a CenterPoint category name to expand its objects and scores. Click the separate eye to hide or show all of that category's candidate boxes, headings and labels in the cloud. Visibility carries across frame changes without changing pending counts or saved annotations. Object numbers stay stable within the frame and category. Selecting a visible box in the cloud opens its category. Instances is a separate tab.
 
 CenterPoint is the prelabel model. Review existing offline results directly, or click 开始推理 to rebuild them on the local GPU. Progress shows completed scans out of 39 and the percentage; the workbench reloads results after successful publication. The export retains all detector outputs after model post-processing, including scores and world-frame XY velocity (m/s). The tracker supports seven classes; other detections have no cross-frame ID. Adjust and accept to save a box, or reject it; review decisions persist in this browser profile. Reviewing saved predictions does not require the GPU.
+
+## Local Trial Validation
+
+Check the offline CenterPoint predictions against the raw point cloud:
+
+```bash
+node tests/centerpoint-trial.cjs --assets
+```
+
+Run the browser review/save flow with the workbench open at `127.0.0.1:3200`:
+
+```bash
+node tests/centerpoint-trial.cjs
+```
+
+Check the Point-SAM service on port 3211 using the first scene scan and local nuScenes data:
+
+```bash
+env -u PYTHONPATH ~/anaconda3/envs/point_pillar/bin/python scripts/trial_model_test.py
+```
 
 Rebuild the offline proposals from the original LiDAR scans (not needed for normal review):
 

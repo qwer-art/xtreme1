@@ -1,5 +1,5 @@
 <template>
-    <div class="pc-flow">
+    <div class="pc-flow" :style="toolbarStyle">
         <div class="item-wrap">
             <span :class="blocking ? 'close disable' : 'close'" :title="$$('btn-close')" @click="blocking ? null : onClose()"
                 ><CloseOutlined /><span class="close-label" style="margin-left: 4px">{{ $$('btn-close') }}</span></span
@@ -10,6 +10,11 @@
                 }}</span>
                 <i class="iconfont icon-a-Jobinformation task-header-icon"></i>
             </div>
+            <label v-if="localTrial" class="trial-font-size">字号
+                <select v-model.number="toolbarSize" aria-label="工具栏字号">
+                    <option v-for="size in toolbarSizes" :key="size" :value="size">{{ size }} px</option>
+                </select>
+            </label>
         </div>
         <div class="item-wrap data-index" v-if="!localTrial && !state.isSeriesFrame && state.frames.length > 0">
             <LeftOutlined
@@ -127,7 +132,7 @@
             </template>
         </div>
     </div>
-    <section v-if="localTrial" class="trial-controls" aria-label="标注工具栏">
+    <section v-if="localTrial" class="trial-controls" :style="toolbarStyle" aria-label="标注工具栏">
         <TrialWorkspace :blocking="blocking" />
         <div class="trial-model-bar">
             <div id="trial-prelabel-controls" class="trial-methods" role="group" aria-label="整段预标注"></div>
@@ -146,7 +151,7 @@
 
 <script setup lang="ts">
     // import { PointCloud } from '../lib';
-    import { onMounted, ref } from 'vue';
+    import { computed, onMounted, ref, watch } from 'vue';
     import {
         RightOutlined,
         LeftOutlined,
@@ -189,7 +194,16 @@
     defineProps<{ railOpen: boolean }>();
     defineEmits<{ (event: 'toggle-rail'): void }>();
 
+    const toolbarSizes = [18, 24, 30, 36];
     const shortcutsOpen = ref(false);
+    const sizeKey = 'xtreme1:local-trial:toolbar-font';
+    const storedSize = localTrial ? Number(localStorage.getItem(sizeKey)) : 0;
+    const toolbarSize = ref(toolbarSizes.includes(storedSize) ? storedSize : 24);
+    const toolbarStyle = computed(() => localTrial ? {
+        '--trial-ui-font': `${toolbarSize.value}px`,
+        '--trial-secondary-font': `${Math.round(toolbarSize.value * 0.875)}px`,
+    } : undefined);
+    watch(toolbarSize, size => localStorage.setItem(sizeKey, String(size)));
 
     onMounted(() => {
         init();
@@ -198,8 +212,9 @@
 
 <style lang="less">
     .trial-layout { --trial-ui-font: 18px; --trial-secondary-font: 16px; }
-    .trial-layout .pc-flow { height: 44px; }
-    .trial-layout .pc-flow .item-wrap .basic-btn .title, .trial-layout .pc-flow .task-header-name { font-size: var(--trial-secondary-font); }
+    .trial-layout .pc-flow { min-height: 44px; height: auto; align-items: center; }
+    .trial-layout .pc-flow .close, .trial-layout .pc-flow .item-wrap .basic-btn .title, .trial-layout .pc-flow .task-header-name { font-size: var(--trial-secondary-font); line-height: 1.3; }
+    .trial-layout .pc-flow .task-header-info, .trial-layout .pc-flow .basic-btn { height: auto; }
     .trial-rail-toggle { display: none; }
     @media (max-width: 680px) {
         .trial-layout .pc-flow .trial-rail-toggle { display: inline-grid; place-items: center; height: 32px; min-width: 32px; background: transparent; color: #dce0e8; border: 0; cursor: pointer; }
@@ -207,9 +222,11 @@
         .trial-layout .pc-flow .close-label, .trial-layout .pc-flow .basic-btn .title { display: none; }
         .trial-layout .pc-flow .basic-btn { min-width: 32px; }
     }
+    .trial-font-size { display: inline-flex; align-items: center; gap: 5px; margin: 0 8px; font-size: var(--trial-secondary-font); color: #f0f2f6; white-space: nowrap; }
+    .trial-font-size select { font: inherit; background: #34363d; color: inherit; border: 1px solid #737985; border-radius: 3px; }
     .trial-controls {
         background: #26282e;
-        color: #e3e5e9;
+        color: #f0f2f6;
         padding: 5px 10px;
         display: grid;
         gap: 4px;
@@ -242,7 +259,7 @@
                 overflow-x: auto;
                 .item-wrap { flex: none; }
                 .item-wrap:first-child { flex: 1 1 0; min-width: 0; }
-                .close { flex-shrink: 0; }
+                .trial-font-size, .close { flex-shrink: 0; }
                 .close { white-space: nowrap; }
                 .task-header-info { min-width: 0; overflow: hidden; margin-left: 4px; padding: 2px 6px; }
                 .task-header-name { max-width: 80px; padding-right: 0; border: 0; }

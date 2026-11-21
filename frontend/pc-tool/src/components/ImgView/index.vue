@@ -44,8 +44,8 @@
     let wrap = ref<HTMLDivElement | null>(null);
     let editor = useInjectEditor();
     let state = editor.state;
-    const cameras = [['CAM_FRONT', '前'], ['CAM_FRONT_RIGHT', '右前'], ['CAM_BACK_RIGHT', '右后'],
-        ['CAM_BACK', '后'], ['CAM_BACK_LEFT', '左后'], ['CAM_FRONT_LEFT', '左前']];
+    const cameras = [['CAM_FRONT_LEFT', '左前'], ['CAM_FRONT', '正前'], ['CAM_FRONT_RIGHT', '右前'],
+        ['CAM_BACK_LEFT', '左后'], ['CAM_BACK', '正后'], ['CAM_BACK_RIGHT', '右后']];
     const selectedCamera = ref(cameras[0][0]);
     const thumbnails = new Map<string, HTMLImageElement>();
     function setThumbnail(name: string, element: unknown) {
@@ -115,16 +115,16 @@
             .camera-stage .img-view { height: 100%; }
             .camera-name { position: absolute; top: 6px; left: 6px; padding: 1px 5px; background: #202428db; color: white; font: 12px/20px monospace; pointer-events: none; }
             .camera-unavailable { display: grid; place-items: center; height: 100%; background: #292d31; color: #d4d8dc; }
-            .camera-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; padding: 5px; background: #1e1f23; }
+            .camera-picker { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 5px; background: #1e1f23; }
             .camera-picker button { position: relative; padding: 0; aspect-ratio: 16 / 9; overflow: hidden; border: 2px solid transparent; background: #303438; color: #fff; cursor: pointer; }
             .camera-picker button[aria-pressed='true'] { border-color: #69baff; }
             .camera-picker img { display: block; width: 100%; height: 100%; object-fit: contain; }
             .camera-picker span { position: absolute; left: 0; bottom: 0; padding: 0 6px; background: #202428db; font-size: 13px; }
             .camera-picker small { margin-left: 4px; color: #ffce89; }
             @media (min-width: 851px) {
-                .view-2d-wrap { display: grid; grid-template-rows: max-content minmax(150px, 1fr); }
-                .camera-picker { grid-template-rows: repeat(3, minmax(0, 1fr)); align-items: start; }
-                .camera-picker button { width: 100%; max-height: 100%; }
+                container: camera-rail / size;
+                .camera-picker { align-content: start; padding: 3px 0; gap: 3px; }
+                .camera-picker button { width: 100%; height: 100%; aspect-ratio: auto; }
             }
             @media (max-width: 850px) {
                 .view-2d-wrap { display: flex; flex-direction: column; }

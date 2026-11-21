@@ -1,0 +1,209 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { createHash } = require('node:crypto');
+const { rawPoints, support } = require('./centerpoint-bev.cjs');
+const { inspectScene, matches, captureBev } = require('./centerpoint-render.cjs');
+
+const publicRoot = path.resolve(__dirname, '../public');
+const artifact = path.join(publicRoot, 'local-scene/centerpoint.json');
+const screenshot = process.env.TRIAL_SCREENSHOT || '/home/jerett/main/daily/xtreme1/centerpoint-scene-0061-all-classes.png';
+const digest = bytes => createHash('sha256').update(bytes).digest('hex');
+const round = value => Number(value.toFixed(5));
+
+function prepare() {
+    assert.ok(fs.existsSync(artifact), `BLOCKED: missing real predictions: ${artifact}`);
+    const bytes = fs.readFileSync(artifact), predictions = JSON.parse(bytes);
+    const manifest = JSON.parse(fs.readFileSync(path.join(publicRoot, 'local-scene/index.json')));
+    assert.equal(predictions.model, 'CenterPoint');
+    assert.equal(predictions.scene, 'scene-0061');
+    assert.equal(predictions.scene, manifest.scene);
+    assert.ok(predictions.frames && !Array.isArray(predictions.frames) && typeof predictions.frames === 'object');
+    const scans = new Set(manifest.scans.map(scan => scan.id));
+    for (const [scanId, boxes] of Object.entries(predictions.frames)) {
+        assert.ok(scans.has(scanId) && Array.isArray(boxes), `invalid lidarScanId: ${scanId}`);
+        for (const box of boxes) {
+            assert.ok(typeof box.id === 'string' && box.id.trim());
+            const tracked = ['Car', 'Pedestrian', 'Bus', 'Truck', 'Trailer', 'Motorcycle', 'Bicycle'].includes(box.category);
+            assert.ok(tracked || ['TrafficCone', 'Barrier', 'ConstructionVehicle'].includes(box.category));
+            assert.ok(tracked ? typeof box.trackId === 'string' && box.trackId.trim() : box.trackId === null);
+            assert.ok(box.velocityWorldXY.length === 2 && box.velocityWorldXY.every(Number.isFinite));
+            for (const field of ['center', 'size']) assert.ok(Array.isArray(box[field]) && box[field].length === 3 && box[field].every(Number.isFinite));
+            assert.ok(box.size.every(value => value > 0) && Number.isFinite(box.yaw));
+            assert.ok(Number.isFinite(box.score) && box.score >= 0 && box.score <= 1);
+        }
+        for (const key of ['id', 'trackId']) {
+            const values = boxes.map(box => box[key]).filter(value => value !== null);
+            assert.equal(new Set(values).size, values.length, `duplicate ${key} in ${scanId}`);
+        }
+    }
+    const keys = manifest.scans.filter(scan => scan.keyframe);
+    const scan = keys.find(item => predictions.frames[item.id]?.length >= 3);
+    assert.ok(scan && keys.length >= 2, 'BLOCKED: need a keyframe with >=3 real candidates and another keyframe');
+    const boxes = predictions.frames[scan.id];
+    const other = keys.find(item => item !== scan && predictions.frames[item.id]?.some(box => boxes.some(first => first.trackId === box.trackId))) || keys.find(item => item !== scan);
+    const points = rawPoints(fs.readFileSync(path.join(publicRoot, scan.pointsUrl)));
+    const evidence = boxes.map(box => support(points, box)).sort((first, second) => second.inside - first.inside);
+    console.log('BEV raw LIDAR_TOP; local spans L/W/H and +/-1.5W comparison windows (metres)', JSON.stringify({
+        scan: scan.id, pcd: scan.pointsUrl, points: points.length, candidates: boxes.length,
+        supported: evidence.filter(item => item.supported).length, best: evidence.slice(0, 3), predictionSha256: digest(bytes),
+    }, null, 2));
+    assert.ok(evidence.some(box => box.supported), 'no box has >=8 returns, >=2 upper-half returns, >=0.3m vertical span and >=25% footprint span');
+    return { bytes, predictions, keys, scan, other, boxes, points, evidence };
+}
+
+const formalId = (scan, box) => `centerpoint:${scan.id}:${box.id}`;
+
+async function eventually(label, check) {
+    const deadline = Date.now() + 20000;
+    let last;
+    do {
+        try { return await check(); } catch (error) { last = error; }
+        await new Promise(resolve => setTimeout(resolve, 125));
+    } while (Date.now() < deadline);
+    throw new Error(`${label}: ${last.message}`);
+}
+
+async function browserRun(data) {
+    const url = new URL(process.env.TRIAL_URL || 'http://127.0.0.1:3200/local-trial');
+    assert.ok(['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) && url.pathname === '/local-trial' && url.protocol === 'http:');
+    const { chromium } = require(process.env.PLAYWRIGHT_CORE || '/home/jerett/.nvm/versions/node/v22.22.2/lib/node_modules/openclaw/node_modules/playwright-core');
+    const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN || '/usr/bin/google-chrome', headless: true,
+        args: ['--enable-unsafe-swiftshader'] });
+    try {
+        const context = await browser.newContext({ viewport: { width: 1680, height: 1000 }, deviceScaleFactor: 1, serviceWorkers: 'block' });
+        assert.deepEqual((await context.storageState()).origins, []);
+        const forbidden = [], predictionResponses = [];
+        await context.route(/^https?:/, route => {
+            const request = route.request(), target = new URL(request.url());
+            if (/\/(?:segment(?:ation)?)(?:\/|$)/i.test(target.pathname) || !['GET', 'HEAD', 'OPTIONS'].includes(request.method())) {
+                forbidden.push(`${request.method()} ${target.pathname}`); return route.abort();
+            }
+            return target.origin === url.origin ? route.continue() : route.abort();
+        });
+        const page = await context.newPage();
+        page.setDefaultTimeout(20000);
+        page.on('response', response => {
+            if (new URL(response.url()).pathname === '/local-scene/centerpoint.json') predictionResponses.push(response);
+        });
+        await page.goto(url.href, { waitUntil: 'domcontentloaded' });
+        const test = name => page.getByTestId(name);
+        if (!data) {
+            const state = await eventually('isolated raw cloud', async () => {
+                const state = await page.evaluate(inspectScene); assert.ok(state?.count > 0 && state.id); return state;
+            });
+            const scan = JSON.parse(fs.readFileSync(path.join(publicRoot, 'local-scene/index.json'))).scans.find(item => item.id === state.id);
+            verifyRaw(state, rawPoints(fs.readFileSync(path.join(publicRoot, scan.pointsUrl))));
+            assert.deepEqual(forbidden, []);
+            console.log(`PROBE ONLY: isolated Chrome ${browser.version()}, ${state.id}: ${state.count} points; no review, no screenshot`); return;
+        }
+        const { scan, keys, other, boxes } = data;
+        const go = async frame => {
+            const field = test('trial-index'), index = String(keys.indexOf(frame) + 1);
+            await page.waitForFunction(() => window.editor?.getCurrentFrame()?.id && !document.querySelector('[data-testid="trial-index"]')?.matches(':disabled'));
+            if (await field.inputValue() !== index) { await field.fill(index); await field.press('Enter'); }
+            await page.waitForFunction(id => window.editor?.getCurrentFrame()?.id === id, frame.id);
+        };
+        const rows = page.locator('[data-testid="centerpoint-panel"] [data-candidate-id]');
+        const row = async box => {
+            const ids = await rows.evaluateAll(nodes => nodes.map(node => node.dataset.candidateId));
+            assert.ok(ids.includes(box.id), `missing review row ${box.id}`);
+            return rows.nth(ids.indexOf(box.id));
+        };
+        const checkFrame = (frame, pending, accepted) => eventually(`frame ${frame.id}: review/render/save`, async () => {
+            const state = await page.evaluate(inspectScene);
+            assert.equal(state?.id, frame.id);
+            const ids = await rows.evaluateAll(nodes => nodes.map(node => node.dataset.candidateId));
+            assert.deepEqual(ids.sort(), pending.map(box => box.id).sort(), 'review rows');
+            assert.deepEqual(state.previews.map(box => box.id).sort(), pending.map(box => formalId(frame, box)).sort(), 'rendered candidates');
+            for (const box of pending) assert.ok(matches(state.previews.find(item => item.id === formalId(frame, box)), box), `3D vertices or heading: ${box.id}`);
+            const expected = accepted.map(box => ({ ...canonical(box), id: formalId(frame, box) }));
+            equalBoxes(state.accepted.map(canonical), expected);
+            const saved = await page.evaluate(id => JSON.parse(localStorage.getItem('xtreme1:local-trial:v3:scene-0061'))?.frames.find(frame => frame.scan_id === id)?.boxes || [], frame.id);
+            equalBoxes(saved.map(box => canonical({ id: box.bbox_id, trackId: box.track_id, category: box.class_id,
+                center: box.center, size: box.size, yaw: box.rotation[2] })), expected);
+            assert.deepEqual(forbidden, []);
+            return state;
+        });
+        console.log('1/4: automatic candidates, raw PCD, measured 3D geometry and BEV pixels');
+        await go(scan);
+        const first = await checkFrame(scan, boxes, []);
+        verifyRaw(first, data.points);
+        assert.ok(predictionResponses.length, 'page never requested real centerpoint.json');
+        assert.equal(digest(await predictionResponses[0].body()), digest(data.bytes), 'served predictions differ from disk');
+        const target = data.evidence.find(item => item.supported);
+        const entry = await captureBev(page, target, false);
+        assert.ok(entry.hits.filter(count => count >= 5).length >= 2, `no visible default-view box before any selection or camera movement: ${entry.hits}`);
+        const captured = await captureBev(page, target);
+        assert.ok(captured.hits.filter(count => count >= 7).length >= 3 && captured.cloudPixels >= 8,
+            `BEV screenshot lacks edges/returns: hits=${captured.hits}; cloudPixels=${captured.cloudPixels}`);
+        console.log(`BEV image: scan=${scan.id}, candidate=${target.id}, default edge hits=${entry.hits}, focused hits(out of 12)=${captured.hits}, cloudPixels=${captured.cloudPixels}`);
+
+        console.log('2/4: accept, edit then accept, reject');
+        const otherBoxes = data.predictions.frames[other.id] || [];
+        const original = boxes.find(box => otherBoxes.some(item => item.trackId === box.trackId)) || boxes[0];
+        const [toEdit, toReject] = boxes.filter(box => box !== original);
+        const pending = boxes.filter(box => ![original, toEdit, toReject].includes(box));
+        await (await row(original)).getByTestId('centerpoint-accept').click();
+        await checkFrame(scan, boxes.filter(box => box !== original), [original]);
+        await (await row(toEdit)).getByTestId('centerpoint-select').click();
+        const edited = { ...toEdit, center: [...toEdit.center], size: [...toEdit.size], yaw: round(toEdit.yaw + 0.21) };
+        edited.center[0] = round(toEdit.center[0] + 0.37); edited.size[0] = round(toEdit.size[0] + 0.26);
+        for (const [label, value] of [['center-0', edited.center[0]], ['size-0', edited.size[0]], ['yaw', edited.yaw]]) {
+            const field = test('centerpoint-adjust').getByLabel(label, { exact: true });
+            await field.fill(String(value)); await field.press('Tab');
+        }
+        await checkFrame(scan, boxes.filter(box => box !== original).map(box => box === toEdit ? edited : box), [original]);
+        await (await row(toEdit)).getByTestId('centerpoint-accept').click();
+        const accepted = [original, edited];
+        await checkFrame(scan, [...pending, toReject], accepted);
+        await (await row(toReject)).getByTestId('centerpoint-reject').click();
+        await checkFrame(scan, pending, accepted);
+
+        console.log('3/4: different scan, shared track when available, return to edited frame');
+        await go(other); await checkFrame(other, otherBoxes, []);
+        const shared = otherBoxes.find(box => box.trackId === original.trackId);
+        if (shared) await (await row(shared)).getByTestId('centerpoint-accept').click();
+        const otherAccepted = shared ? [shared] : [], otherPending = otherBoxes.filter(box => box !== shared);
+        await checkFrame(other, otherPending, otherAccepted);
+        await go(scan); await checkFrame(scan, pending, accepted);
+        console.log('4/4: reload, verify complete formal and pending sets on both scans');
+        await page.reload({ waitUntil: 'domcontentloaded' });
+        await go(scan); await checkFrame(scan, pending, accepted);
+        await go(other); await checkFrame(other, otherPending, otherAccepted);
+        assert.ok(predictionResponses.length >= 2, 'missing offline reload');
+        assert.equal(digest(await predictionResponses.at(-1).body()), digest(data.bytes));
+        assert.deepEqual(forbidden, []);
+        fs.mkdirSync(path.dirname(screenshot), { recursive: true });
+        try { fs.writeFileSync(screenshot, captured.png, { flag: 'wx' }); console.log(`Saved ${screenshot}`); }
+        catch (error) {
+            if (error.code !== 'EEXIST') throw error;
+            assert.equal(digest(fs.readFileSync(screenshot)), digest(captured.png), `existing PNG differs from the verified live capture; preserved ${screenshot}`);
+            console.log(`Existing PNG identical to live capture: ${screenshot}`);
+        }
+        console.log(`PASS real CenterPoint; edited=${edited.id}, rejected=${toReject.id}, accepted track=${original.trackId}, cross-frame=${shared?.trackId ?? 'no shared ID in input'}, segmentationRequests=0`);
+    } finally { await browser.close(); }
+}
+
+function verifyRaw(state, points) {
+    assert.equal(state.count, points.length);
+    for (const [ordinal, index] of [0, Math.floor(points.length / 2), points.length - 1].entries()) {
+        assert.ok(points[index].every((value, axis) => Math.abs(value - state.probes[ordinal][axis]) < 0.0001), `raw/render point ${index}`);
+    }
+}
+function canonical(box) {
+    return { id: box.id, trackId: box.trackId, category: box.category, center: box.center.map(round), size: box.size.map(round), yaw: round(Math.atan2(Math.sin(box.yaw), Math.cos(box.yaw))) };
+}
+function equalBoxes(actual, expected) {
+    const sorted = boxes => [...boxes].sort((first, second) => first.id.localeCompare(second.id));
+    assert.deepEqual(sorted(actual), sorted(expected));
+}
+
+async function main() {
+    const mode = process.argv[2];
+    if (mode === '--probe-browser') return browserRun();
+    assert.ok(!mode || mode === '--assets', `unknown mode ${mode}`);
+    const data = prepare();
+    if (!mode) await browserRun(data);
+}
+main().catch(error => { console.error(error.stack || error.message); process.exitCode = 1; });

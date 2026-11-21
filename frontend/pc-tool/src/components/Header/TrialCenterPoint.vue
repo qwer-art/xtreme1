@@ -4,10 +4,14 @@
         <output v-if="frames && loadError" role="alert">{{ loadError }}</output>
         <button v-if="loadError" type="button" @click="load">重新读取</button>
         <fieldset v-if="result.available" :disabled="blocked">
+            <div class="cp-filter" aria-label="候选置信度筛选">
+                <label>置信度 ≥ <input data-testid="centerpoint-threshold" type="number" min="0" max="1" step="0.05" v-model.number="threshold" /></label>
+                <small class="cp-legend"># 帧内序号 · ID 跟踪编号 · 最后值置信度</small>
+            </div>
             <div class="cp-list" aria-label="本帧 CenterPoint 候选">
                 <section v-for="group in groups" :key="group.category" class="cp-group" :data-category="group.category">
                     <div class="cp-group-heading">
-                    <button type="button" class="cp-type" :aria-expanded="expanded === group.category" :aria-controls="`cp-objects-${group.category}`"
+                    <button type="button" class="cp-type" :style="{ borderLeftColor: categoryColor[group.category] }" :aria-expanded="expanded === group.category" :aria-controls="`cp-objects-${group.category}`"
                         @click="expanded = expanded === group.category ? '' : group.category">
                         <span class="caret" aria-hidden="true"></span><strong>{{ group.category }}</strong><span class="cp-count">{{ group.items.length }}</span>
                     </button>
@@ -19,7 +23,7 @@
                     <span v-if="!group.items.length" class="cp-empty">暂无待审对象</span>
                     <fieldset v-for="item in group.items" :key="item.id" class="cp-row" :class="{ selected: item.id === selected }" :data-candidate-id="item.sourceId" :disabled="hidden.has(group.category)">
                     <button type="button" data-testid="centerpoint-select" :aria-pressed="item.id === selected"
-                        :title="`${item.sourceId} · ${item.trackName}`" @click="selected = item.id">对象 {{ item.number }} <span class="cp-score" :aria-label="`置信度 ${item.score.toFixed(2)}`">{{ item.score.toFixed(2) }}</span></button>
+                        :title="`框 ${item.sourceId} · 轨迹 ${item.trackName}`" @click="selected = item.id">对象 {{ item.number }} · 框 {{ item.sourceId }} · 轨迹 {{ item.trackName }} <span class="cp-score" :aria-label="`置信度 ${item.score.toFixed(2)}`">{{ item.score.toFixed(2) }}</span></button>
                     <button type="button" data-testid="centerpoint-accept" @click="accept(item)">接受</button>
                     <button type="button" data-testid="centerpoint-reject" :disabled="awaitingSave(item)" @click="reject(item)">拒绝</button>
                     </fieldset>
@@ -51,6 +55,7 @@ import type { CenterPointCandidate, CenterPointFrames } from '../../common/trial
 import { centerPointPreview } from '../../common/trialCenterPointPreview';
 import { loadDocument, scanCatalog } from '../../common/trialAnnotationStore';
 import { scans } from '../../common/trialScene';
+import { detectionColors } from '../../common/trialDetectionColors';
 
 const props = defineProps<{ blocking: boolean; visible: boolean; interactive: boolean; refreshKey: string }>();
 const editor = useInjectEditor();
@@ -59,6 +64,8 @@ const frames = shallowRef<CenterPointFrames>(), loadError = ref(''), message = r
 const fields = ['center', 'size'] as const;
 const reviewCategories = new Set(['Car', 'Pedestrian', 'Bicycle', 'Motorcycle']);
 const expanded = ref('');
+const threshold = ref(0.5);
+const categoryColor = detectionColors;
 const hidden = ref(new Set<string>());
 const selected = ref(''), revision = ref(0), busy = ref(false);
 const blocked = computed(() => props.blocking || busy.value);
@@ -73,7 +80,8 @@ const result = computed(() => {
             if (!saved) saved = new Set(loadDocument(scanCatalog(scans)).frames.find(frame => frame.scan_id === scanId.value)?.boxes.map(box => box.bbox_id));
             return saved.has(id);
         };
-        const scoped = all.filter(item => reviewCategories.has(item.category));
+        const value = Number.isFinite(threshold.value) ? Math.max(0, Math.min(1, threshold.value)) : 0.3;
+        const scoped = all.filter(item => reviewCategories.has(item.category) && item.score >= value);
         const numbers = new Map<string, number>();
         const items = scoped.flatMap(item => {
             const number = (numbers.get(item.category) || 0) + 1;
@@ -81,7 +89,7 @@ const result = computed(() => {
             const pending = pendingReview(item, savedBox);
             return pending ? [{ ...pending, number }] : [];
         });
-        return { available: true, items, status: `四类待审 ${items.length} / ${scoped.length}` };
+        return { available: true, items, status: `候选待审 ${items.length} · 阈值 ${value.toFixed(2)}` };
     } catch (error) { return { items: [], status: errorText(error) }; }
 });
 const items = computed(() => result.value.items), status = computed(() => result.value.status);
@@ -184,8 +192,10 @@ async function accept(item: CenterPointCandidate) {
 .cp-panel fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .cp-group + .cp-group { margin-top: 4px; }
 .cp-group-heading { display: grid; grid-template-columns: minmax(0, 1fr) 38px; gap: 4px; }
+.cp-filter { display: grid; grid-template-columns: max-content 1fr; align-items: center; gap: 4px; padding: 0 9px; }
+.cp-legend { grid-column: 1 / -1; color: #aeb5c1; font-size: 12px; }
 .cp-visibility { display: grid; place-items: center; }
-.cp-group .cp-type { display: flex; align-items: center; width: 100%; gap: 9px; padding: 5px 9px; text-align: left; }
+.cp-group .cp-type { border-left: 5px solid transparent; display: flex; align-items: center; width: 100%; gap: 9px; padding: 5px 9px; text-align: left; }
 .caret { width: 8px; height: 8px; border: solid currentColor; border-width: 2px 2px 0 0; transform: rotate(45deg); }
 .cp-type[aria-expanded=true] .caret { transform: rotate(135deg); }
 .cp-count { margin-left: auto; font-variant-numeric: tabular-nums; }

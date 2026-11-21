@@ -218,7 +218,8 @@
             --camera-limit: 40%;
             .trial-review-dock, .trial-rail-divider { display: none; }
             @media (min-width: 851px) {
-                --camera-default: min(38%, 800px);
+                container-type: size;
+                --camera-default: min(48%, max(min(38%, 800px), calc((100cqh - 18px) * 0.7111)));
                 --camera-limit: 52%;
                 .main-view-container { right: var(--trial-rail-width) !important; }
                 .trial-review-dock { display: block; position: absolute; inset: 0 0 0 auto; width: var(--trial-rail-width); }
