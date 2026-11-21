@@ -1,6 +1,7 @@
 <template>
     <div
         class="img-view-max"
+        :class="{ 'trial-camera-max': localTrial }"
         ref="container"
         v-show="state.config.showSingleImgView"
         :style="{
@@ -8,12 +9,14 @@
             height: `${state.config.maxViewHeight}px`,
         }"
     >
-        <div style="height: 100%; position: relative" @dblclick="onDBClick">
+        <div v-show="frameImageReady" style="height: 100%; position: relative" @dblclick="onDBClick">
             <!-- <div class="render-proxy" ref="proxy"></div> -->
             <div class="render" ref="dom"></div>
         </div>
-        <ChangeRefVue v-show="canOperate()" />
-        <div class="info" v-show="canOperate()">
+        <div v-if="!frameImageReady" class="camera-wait">等待当前帧图像</div>
+        <div v-if="localTrial" v-show="canOperate() && frameImageReady"><ChangeRefVue /></div>
+        <ChangeRefVue v-else v-show="canOperate()" />
+        <div class="info" v-show="canOperate() && frameImageReady">
             <span
                 :class="state.config.singleImgViewIndex <= 0 ? 'icon disable' : 'icon'"
                 @click="state.config.singleImgViewIndex <= 0 ? null : offsetImgIndex(-1)"
@@ -39,10 +42,11 @@
                 ><ArrowRightOutlined
             /></span>
         </div>
-        <div class="tool" v-show="canOperate()">
-            <span class="icon" :title="$$('close')" @click="onBack"><CloseCircleOutlined /></span>
+        <div class="tool" v-show="localTrial || canOperate()">
+            <button v-if="localTrial" type="button" class="icon" aria-label="返回点云" title="返回点云" @click="onBack"><CloseCircleOutlined /></button>
+            <span v-else class="icon" :title="$$('close')" @click="onBack"><CloseCircleOutlined /></span>
         </div>
-        <div class="label-container">
+        <div v-show="frameImageReady" class="label-container">
             <Labels :data="innerState.labels" v-show="editor.state.config.showLabel" />
         </div>
         <slot name="annotation-2d" :data="innerState.annotations"></slot>
@@ -67,6 +71,8 @@
     } from '@ant-design/icons-vue';
     import useUI from '../../hook/useUI';
     import useContextMenu from '../../hook/useContextMenu';
+    import { localTrial } from '../../common/localTrial';
+    import { isTrialFrameImage } from './trialFrameImage';
 
     // ***************Props and Emits***************
 
@@ -80,6 +86,8 @@
     let pc = editor.pc;
     let view = {} as Image2DRenderView;
     let state = useInjectState();
+    const frameImageReady = computed(() => !localTrial || isTrialFrameImage(state.frames[state.frameIndex]?.id,
+        state.imgViews[state.config.singleImgViewIndex]?.imgUrl));
     let $$ = editor.bindLocale(locale);
     let innerState = reactive({
         renderBox: true,
@@ -92,9 +100,9 @@
     });
 
     watch(
-        () => [state.config.showSingleImgView, state.config.singleImgViewIndex],
+        () => [state.config.showSingleImgView, state.config.singleImgViewIndex, frameImageReady.value],
         () => {
-            if (state.config.showSingleImgView) {
+            if (state.config.showSingleImgView && frameImageReady.value) {
                 // console.log(state.image2DMax.enable, state.image2DMax.index);
                 update();
             }
@@ -279,6 +287,21 @@
 
 <style lang="less">
     .img-view-max {
+        &.trial-camera-max {
+            .tool button { border: 0; color: white; }
+            .camera-wait { height: 100%; display: grid; place-items: center; }
+            .info { left: 6px; margin: 0; width: auto; max-width: calc(100% - 52px); display: flex; align-items: center; }
+            .info .name { width: auto; }
+            .info .file-name { max-width: none; }
+            .change-ref { top: auto; bottom: 6px; }
+            @media (max-width: 850px) {
+                position: fixed;
+                inset: 0;
+                z-index: 20;
+                width: auto !important;
+                height: auto !important;
+            }
+        }
         // height: 100%;
         height: 100%;
         padding: 1px;

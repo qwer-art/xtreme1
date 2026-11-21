@@ -15,10 +15,9 @@ const exists = url => fs.statSync(asset(url), { throwIfNoEntry: false })?.size >
 
 function complete() {
     try {
-        const { scene, scans } = readJson(manifest);
-        return scene === sceneName && scans.length === 382 && scans.every(scan => exists(scan.pointsUrl) &&
-            (scan.keyframe ? readJson(asset(scan.viewsUrl)).length === channels.length &&
-                channels.every(channel => exists(`/local-scene/${scan.id}/${channel}.jpg`)) : scan.viewsUrl === null));
+        const { scene, scans, pairingVersion } = readJson(manifest);
+        return pairingVersion === 1 && scene === sceneName && scans.length === 382 && scans.every(scan => exists(scan.pointsUrl) &&
+            (!scan.viewsUrl || readJson(asset(scan.viewsUrl)).every(view => exists(view.imgUrl))));
     } catch { return false; }
 }
 
@@ -41,7 +40,7 @@ function generate() {
     const table = name => readJson(path.join(root, 'v1.0-mini', `${name}.json`));
     const index = name => new Map(table(name).map(record => [record.token, record]));
     const scene = table('scene').find(record => record.name === sceneName);
-    const samples = new Set(table('sample').filter(record => record.scene_token === scene.token).map(record => record.token));
+    const samples = new Map(table('sample').filter(record => record.scene_token === scene.token).map(record => [record.token, record.timestamp]));
     const sensors = index('sensor');
     const calibrations = index('calibrated_sensor');
     const poses = index('ego_pose');
@@ -53,21 +52,22 @@ function generate() {
         if (!samples.has(record.sample_token)) continue;
         const channel = sensors.get(calibration(record).sensor_token).channel;
         if (channel === 'LIDAR_TOP') lidar.push(record);
-        if (record.is_key_frame && channels.includes(channel)) cameras.set(`${record.sample_token}/${channel}`, record);
+        if (record.filename.startsWith('samples/') && channels.includes(channel)) cameras.set(`${record.sample_token}/${channel}`, record);
     }
     lidar.sort((first, second) => first.timestamp - second.timestamp);
     assert.equal(lidar.length, 382);
-    assert.equal(lidar.filter(record => record.is_key_frame).length, scene.nbr_samples);
     const scans = lidar.map((record, ordinal) => {
         const prefix = `/local-scene/${record.token}`;
         const pointsUrl = `${prefix}/points.pcd`;
         const world = worldFromSensor(record);
         fs.mkdirSync(asset(prefix), { recursive: true });
         writeCloud(record, pointsUrl);
-        const viewsUrl = record.is_key_frame ? `${prefix}/views.json` : null;
+        const linked = samples.get(record.sample_token) === record.timestamp && channels.some(name => cameras.has(`${record.sample_token}/${name}`));
+        const viewsUrl = linked ? `${prefix}/views.json` : null;
         if (viewsUrl) {
-            const views = channels.map(name => {
+            const views = channels.flatMap(name => {
                 const camera = cameras.get(`${record.sample_token}/${name}`);
+                if (!camera || !fs.existsSync(path.join(root, camera.filename))) return [];
                 const [[fx, skew, cx], [, fy, cy]] = calibration(camera).camera_intrinsic;
                 assert.equal(skew, 0);
                 const imgUrl = `${prefix}/${name}.jpg`;
@@ -80,7 +80,7 @@ function generate() {
         if ((ordinal + 1) % 50 === 0) console.log(`${sceneName}: ${ordinal + 1}/${lidar.length} clouds`);
         return { id: record.token, timestamp: record.timestamp, keyframe: record.is_key_frame, pointsUrl, worldFromLidar: world.toArray(), viewsUrl, sampleToken: record.sample_token };
     });
-    fs.writeFileSync(`${manifest}.tmp`, JSON.stringify({ scene: sceneName, scans }) + '\n');
+    fs.writeFileSync(`${manifest}.tmp`, JSON.stringify({ scene: sceneName, pairingVersion: 1, scans }) + '\n');
     fs.renameSync(`${manifest}.tmp`, manifest);
     console.log(`${manifest}: ${scans.length} clouds, ${scene.nbr_samples} camera sets`);
 }

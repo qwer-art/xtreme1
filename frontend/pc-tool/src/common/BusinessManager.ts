@@ -1,6 +1,7 @@
 import {
     BusinessManager as BaseBusinessManager,
     IDataResource,
+    IImgViewConfig,
     IFrame,
     IObject,
     utils,
@@ -28,7 +29,14 @@ export default class BusinessManager extends BaseBusinessManager {
             if (scan.viewsUrl) {
                 const response = await fetch(scan.viewsUrl);
                 if (!response.ok) throw new Error(`${scan.viewsUrl}: HTTP ${response.status}`);
-                viewConfig = await response.json();
+                const linked: IImgViewConfig[] = await response.json();
+                const decoded = await Promise.all(linked.map(async view => {
+                    const image = new Image();
+                    image.src = view.imgUrl;
+                    try { await image.decode(); } catch { return null; }
+                    return { ...view, imgObject: image };
+                }));
+                viewConfig = decoded.filter(view => view !== null);
             }
             return { pointsUrl: scan.pointsUrl, pointsData: {}, viewConfig,
                 time: 0, name: 'scene-0061' };

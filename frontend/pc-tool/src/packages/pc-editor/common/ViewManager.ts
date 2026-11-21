@@ -104,10 +104,11 @@ export default class ViewManager {
 
     setImgViews(configs: IImgViewConfig[]) {
         let { state, pc } = this.editor;
-        state.imgViews = configs;
-        if (state.imgViews.length === 0) {
-            state.config.showImgView = false;
+        const index = state.config.singleImgViewIndex;
+        if (state.config.showSingleImgView && (!configs[index] || configs[index].name !== state.imgViews[index]?.name)) {
+            this.showImgView();
         }
+        state.imgViews = configs;
 
         let prefix = state.config.imgViewPrefix;
         let singlePrefix = state.config.singleViewPrefix;

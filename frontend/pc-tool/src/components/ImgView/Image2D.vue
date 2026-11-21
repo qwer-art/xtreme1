@@ -9,6 +9,8 @@
     >
         <div class="render" ref="dom"></div>
         <div class="tool">
+            <button v-if="localTrial" type="button" class="icon expand-camera" title="放大相机" aria-label="放大相机"
+                @click.stop="onDBClick" @dblclick.stop><FullscreenOutlined /></button>
             <span
                 :class="state.config.imgRegionIndex === props.imgIndex ? 'icon active' : 'icon'"
                 @dblclick.stop="null"
@@ -33,6 +35,7 @@
     import useContextMenu from '../../hook/useContextMenu';
     import { FullscreenOutlined, EyeOutlined } from '@ant-design/icons-vue';
     import useInjectProxy from './useProxy';
+    import { localTrial } from '../../common/localTrial';
 
     // ***************Props and Emits***************
     interface ImgViewProps {
@@ -154,6 +157,8 @@
             position: absolute;
             right: 6px;
             top: 6px;
+            &:has(.expand-camera) { display: flex; }
+            .expand-camera { border: 0; color: inherit; align-items: center; }
             .icon {
                 .camera-heading {
                     font-size: 14px;

@@ -1,16 +1,18 @@
 <template>
     <div class="pc-editor">
-        <div class="pc-editor-layout" :class="{ 'trial-layout': localTrial }">
-            <div class="business-container"><Header /></div>
+        <div class="pc-editor-layout" :class="{ 'trial-layout': localTrial, 'rail-open': railOpen }">
+            <div class="business-container"><Header :rail-open="railOpen" @toggle-rail="railOpen = !railOpen" /></div>
             <div class="content-container-wrap">
                 <div class="content-container">
                     <div class="tool-container">
                         <Tool />
                     </div>
                     <Main />
-                    <div class="operation-container">
-                        <Operation />
-                    </div>
+                    <Teleport v-if="!localTrial || dockedReview !== null" :to="localTrial ? '#trial-review-dock' : 'body'" :disabled="!dockedReview">
+                        <div class="operation-container">
+                            <Operation @show-rail="railOpen = true" />
+                        </div>
+                    </Teleport>
                 </div>
                 <Loading />
             </div>
@@ -19,7 +21,7 @@
 </template>
 
 <script setup lang="ts">
-    import { reactive, onMounted } from 'vue';
+    import { ref, onMounted, onBeforeUnmount } from 'vue';
 
     import { useProvideEditor } from '../../state';
     import { localTrial } from '../../common/localTrial';
@@ -35,11 +37,18 @@
     import ModalConfirm from '../Modal/sub/ModalConfirm.vue';
 
     let editor = useProvideEditor();
+    const railOpen = ref(false);
+    const desktop = localTrial ? window.matchMedia('(min-width: 851px)') : null;
+    const dockedReview = ref<boolean | null>(null);
+    const updateDock = () => { dockedReview.value = !!desktop?.matches; };
 
     onMounted(() => {
+        updateDock();
+        desktop?.addEventListener('change', updateDock);
         editor.registerModal('ModelHelp', ModelHelp);
         editor.registerModal('ModalConfirm', ModalConfirm);
     });
+    onBeforeUnmount(() => desktop?.removeEventListener('change', updateDock));
 </script>
 
 <style lang="less">
@@ -51,10 +60,23 @@
 
         .pc-editor-layout {
             &.trial-layout {
+                --review-width: clamp(290px, 23%, 420px);
                 height: 100%;
                 display: grid;
                 grid-template-rows: auto minmax(0, 1fr);
                 .business-container, .content-container-wrap { position: relative; inset: auto; height: auto; min-width: 0; }
+                .main-container { right: var(--review-width); bottom: 0; }
+                .tool-container { bottom: 0; }
+                .operation-container { width: var(--review-width); top: 0; bottom: 0; box-sizing: border-box; padding: 0; background: #24252a; border: 0; border-left: 1px solid #50525a; }
+                @media (min-width: 851px) {
+                    .main-container { right: 0; }
+                    .trial-review-dock > .operation-container { position: relative; width: 100%; height: 100%; }
+                }
+                @media (max-width: 680px) {
+                    .main-container { right: 0; }
+                    .operation-container { display: none; width: min(360px, calc(100% - 50px)); z-index: 4; }
+                    &.rail-open .operation-container { display: block; }
+                }
             }
             .business-container {
                 position: absolute;

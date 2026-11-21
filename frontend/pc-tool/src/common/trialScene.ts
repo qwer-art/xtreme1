@@ -23,8 +23,9 @@ export function setSceneFilter(editor: Editor, mode: 'all' | 'key', source = '')
                 sourceId: editor.state.config.withoutTaskId, sourceType: SourceType.DATA_FLOW }] }));
         frameCache.set(editor, frames);
     }
-    const visible = mode === 'all' ? scans : scans.filter(scan => scan.keyframe);
-    editor.setFrames(mode === 'all' ? frames : frames.filter((frame, index) => scans[index].keyframe));
+    const visible = mode === 'all' ? scans : scans.filter(scan => scan.viewsUrl);
+    editor.setFrames(mode === 'all' ? frames : frames.filter((frame, index) => scans[index].viewsUrl));
+    if (!visible.length) throw new Error('场景没有图像与点云配对帧');
     const time = scans.find(scan => scan.id === source)?.timestamp ?? visible[0].timestamp;
     return visible.reduce((best, scan, index) => Math.abs(scan.timestamp - time) <
         Math.abs(visible[best].timestamp - time) ? index : best, 0);

@@ -2,6 +2,7 @@ const { defineConfig, mergeConfig } = require('vite');
 const vue = require('@vitejs/plugin-vue');
 const path = require('path');
 const fs = require('fs');
+const { trialPrelabel } = require('./scripts/trial-prelabel.cjs');
 
 let localConfig = getLocalConfig();
 // https://vitejs.dev/config/
@@ -21,7 +22,7 @@ const config = defineConfig({
             },
         },
     },
-    plugins: [vue()],
+    plugins: [vue(), trialPrelabel(__dirname)],
     resolve: {
         alias: [
             { find: 'pc-render', replacement: path.resolve(__dirname, './src/packages/pc-render') },

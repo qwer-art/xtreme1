@@ -1,77 +1,89 @@
 <template>
-    <div class="candidate-tools">
-        <button type="button" data-testid="candidate-panel" :aria-expanded="open" @click="open = !open">模型点提示 · 候选 {{ queue.length }}</button>
-        <fieldset v-if="open" :disabled="blocked" aria-label="模型候选">
+    <div v-show="samActive || queue.length || message" class="candidate-tools" data-testid="point-sam-panel">
+        <div class="review-heading"><strong>Point-SAM</strong><output>待审 {{ queue.length }}</output></div>
+        <fieldset :disabled="blocked" aria-label="模型候选">
+            <div v-show="samActive" class="sam-tools">
             <label>类别 <select v-model="category" @change="resetDraft"><option v-for="item in editor.state.classTypes" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
-            <button type="button" v-for="mode in modes" :key="mode" :aria-pressed="picking === mode" @click="picking = picking === mode ? null : mode">{{ mode === '+' ? '+ 前景点' : '− 背景点' }}</button>
-            <button type="button" :disabled="!prompts.some(item => item.positive)" @click="infer">分割 ({{ prompts.length }})</button>
+            <button type="button" v-for="mode in modes" :key="mode" :aria-pressed="picking === mode" :disabled="mode === '-' && !prompts.some(item => item.positive)" @click="picking = mode">{{ mode === '+' ? '+ 前景点' : '− 背景点' }}</button>
             <button type="button" :disabled="!prompts.length && !draft" @click="resetDraft">新提示组</button>
-            <label>向后 <input v-model.number="reach" aria-label="传播帧数" type="number" min="1" :max="editor.state.frames.length - 1" /> 帧</label>
+            <details><summary>跨帧传播</summary><label>向后 <input v-model.number="reach" aria-label="传播帧数" type="number" min="1" :max="editor.state.frames.length - 1" /> 帧</label>
             <button type="button" @click="propagate">传播{{ current ? '候选框' : '已选人工框' }}</button>
-            <button type="button" :disabled="!marked.length" @click="accept(queue.filter(item => marked.includes(item.id)))">接受勾选 ({{ marked.length }})</button>
+            <button type="button" :disabled="!marked.length" @click="accept(queue.filter(item => marked.includes(item.id)))">接受勾选 ({{ marked.length }})</button></details>
+            </div>
             <div v-if="queue.length" class="candidate-list" aria-label="待审候选列表">
-                <div v-for="item in queue" :key="item.id" class="candidate-row">
+                <div v-for="item in queue" :key="item.id" class="candidate-row" :data-sam-id="item.id">
                     <input type="checkbox" v-model="marked" :value="item.id" :aria-label="`批量选择 ${item.scanId}`" />
                     <button type="button" :aria-pressed="current?.id === item.id" :title="item.scanId" @click="review(item)">查看 {{ item.category }} · 帧 {{ frameNumber(item.scanId) }}</button>
                     <span>{{ item.indices.length ? `掩码 ${item.indices.length} 点` : '传播框' }} · {{ Math.round(item.elapsed_ms) }} ms</span>
-                    <button type="button" @click="accept([item])">接受</button><button type="button" @click="remove([item])">拒绝</button>
+                    <button type="button" data-testid="point-sam-accept" @click="accept([item])">接受</button><button type="button" data-testid="point-sam-reject" @click="remove([item])">拒绝</button>
                 </div>
             </div>
-            <div v-if="current" class="candidate-edit" aria-label="调整待审框">
+            <details v-if="current"><summary>微调候选框</summary><div class="candidate-edit" data-testid="point-sam-adjust" aria-label="调整待审框">
                 <label v-for="field in fields" :key="field">{{ field === 'center' ? '中心 XYZ (m)' : '尺寸 XYZ (m)' }}
                     <input v-for="(_, axis) in current[field]" :key="axis" type="number" step="0.1" :aria-label="`${field}-${axis}`" :value="current[field][axis]" @change="adjust($event, field, axis)" />
                 </label>
                 <label>偏航 (rad) <input type="number" step="0.05" :value="current.yaw" @change="adjust($event, 'yaw')" /></label>
-            </div>
+            </div></details>
         </fieldset>
-        <output v-if="open" aria-live="polite">{{ message }}</output>
+        <output aria-live="polite">{{ message }}</output>
     </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 import { MathUtils } from 'three';
-import { Event as EditorEvent } from 'pc-editor';
+import { Event as EditorEvent, StatusType } from 'pc-editor';
 import { useInjectEditor } from '../../state';
 import { captureSelected } from '../../common/trialAnnotations';
 import { acceptCandidates, checkedShape, pickVertex, preview, scanCloud, segment } from '../../common/trialCandidates';
 import type { Candidate, Prompt } from '../../common/trialCandidates';
 import { trackNext } from '../../common/trialTracking';
 
-const props = defineProps<{ blocking: boolean }>();
+const props = defineProps<{ blocking: boolean; active: boolean; reviewing: boolean }>();
+const emit = defineEmits<{ (event: 'update:active', value: boolean): void }>();
 const editor = useInjectEditor();
 const modes = ['+', '-'] as const, fields = ['center', 'size'] as const;
-const open = ref(false), busy = ref(false), category = ref('Car'), reach = ref(1), message = ref('');
+const samActive = computed(() => props.active), busy = ref(false), category = ref('Car'), reach = ref(1), message = ref('');
 const scanId = computed(() => editor.getCurrentFrame()?.id || '');
 const blocked = computed(() => props.blocking || busy.value || !scanId.value);
 const queue = shallowRef<Candidate[]>([]), marked = ref<string[]>([]), selected = ref(''), draft = ref('');
-const prompts = shallowRef<Prompt[]>([]), picking = ref<'+' | '-' | null>(null);
+const prompts = shallowRef<Prompt[]>([]), picking = ref<'+' | '-'>('+');
 const current = computed(() => queue.value.find(item => item.id === selected.value && item.scanId === scanId.value));
 const frameNumber = (id: string) => editor.state.frames.findIndex(frame => frame.id === id) + 1 || '（全部帧）';
 let request: AbortController | undefined, dispose: (() => void) | undefined, alive = true;
 const frameReady = ref(0);
 function ready() { frameReady.value++; }
-function resetDraft() { draft.value = ''; prompts.value = []; picking.value = null; selected.value = ''; }
+function resetDraft() { draft.value = ''; prompts.value = []; picking.value = '+'; selected.value = ''; message.value = ''; }
 watch(scanId, () => { request?.abort(); resetDraft(); }, { flush: 'sync' });
-watch(open, visible => { if (!visible) picking.value = null; });
-watch([current, prompts, open, frameReady, () => props.blocking], () => {
+watch(samActive, active => {
+    if (active) return;
+    request?.abort();
+    if (message.value === '正在分割…') message.value = '';
+});
+watch(() => editor.state.status, status => { if (status === StatusType.Create) emit('update:active', false); });
+watch([current, prompts, samActive, frameReady, () => props.blocking, () => props.reviewing], () => {
     dispose?.(); dispose = undefined;
-    if (open.value && !props.blocking && (current.value || prompts.value.length)) dispose = preview(editor, current.value, prompts.value);
+    if (props.reviewing && !props.blocking && (current.value || (samActive.value && prompts.value.length))) dispose = preview(editor, current.value, samActive.value ? prompts.value : []);
 });
 
+let down: [number, number] | undefined;
 function intercept(event: MouseEvent) {
     const view = editor.viewManager.getMainView();
-    if (!picking.value || !open.value || event.button !== 0 || !view || event.target !== view.renderer.domElement) return;
+    if (!samActive.value || !props.reviewing || editor.state.status === StatusType.Create || event.button !== 0 || !view || event.target !== view.renderer.domElement) return;
+    if (event.type === 'pointerdown') { down = [event.clientX, event.clientY]; return; }
+    if (!down || Math.hypot(event.clientX - down[0], event.clientY - down[1]) > 4) return;
+    down = undefined;
     event.preventDefault(); event.stopImmediatePropagation();
     if (event.type !== 'click' || blocked.value) return;
     try {
         const index = pickVertex(scanCloud(editor), view.camera, view.renderer.domElement.getBoundingClientRect(), event.clientX, event.clientY);
         if (index < 0) { message.value = '此处没有扫描点'; return; }
         prompts.value = [...prompts.value.filter(item => item.index !== index), { index, positive: picking.value === '+' }];
-        message.value = `${picking.value} 点 #${index}`;
+        if (prompts.value.some(item => item.positive)) void infer();
+        else message.value = '请先点一个前景点';
     } catch (error) { report(error); }
 }
-const events = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click', 'dblclick'];
+const events = ['pointerdown', 'click'];
 onMounted(() => {
     events.forEach(name => window.addEventListener(name, intercept as EventListener, true));
     editor.addEventListener(EditorEvent.FRAME_CHANGE, ready);
@@ -85,7 +97,7 @@ function report(error: unknown) { message.value = error instanceof Error ? error
 async function run(action: () => Promise<void>) {
     if (blocked.value) return;
     busy.value = true; message.value = '';
-    try { await action(); } catch (error) { if (alive) report(error); } finally { busy.value = false; }
+    try { await action(); } catch (error) { if (alive && !(error instanceof DOMException && error.name === 'AbortError')) report(error); } finally { busy.value = false; }
 }
 function infer() { return run(async () => {
     const source = scanId.value, cloud = scanCloud(editor);
@@ -97,7 +109,7 @@ function infer() { return run(async () => {
     const item = { ...shape, prompts: prompts.value, id: old?.id || MathUtils.generateUUID(), scanId: source, category: category.value,
         trackId: old?.trackId || editor.createTrackId(), trackName: old?.trackName || editor.getId() };
     queue.value = [...queue.value.filter(entry => entry.id !== item.id), item];
-    draft.value = selected.value = item.id; picking.value = null; message.value = '待审：黄色掩码与候选框';
+    draft.value = selected.value = item.id; message.value = '待审：黄色掩码与候选框';
 }); }
 function remove(items: Candidate[]) {
     const ids = new Set(items.map(item => item.id));
@@ -159,11 +171,14 @@ function propagate() { return run(async () => {
 </script>
 
 <style scoped>
-.candidate-tools { min-width: 0; }
-fieldset, .candidate-row, .candidate-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
-fieldset { margin: 4px 0; padding: 0; border: 0; }
-.candidate-list { flex-basis: 100%; max-height: 7em; overflow-y: auto; }
-.candidate-row + .candidate-row { border-top: 1px solid #ced8db; }
-input[type=number] { width: 5em; }
-.candidate-edit input { margin-left: 3px; }
+.candidate-tools { min-width: 0; border-bottom: 1px solid #484b53; margin-bottom: 8px; padding-bottom: 8px; }
+.sam-tools, .candidate-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+fieldset { margin: 0; padding: 0; min-width: 0; border: 0; }
+.candidate-list { max-height: 30vh; overflow-y: auto; }
+.candidate-row { border-bottom: 1px solid #41434b; padding: 4px 0; }
+.sam-tools details { flex-basis: 100%; }
+summary { cursor: pointer; padding: 3px 0; }
+input[type=number] { width: 4em; }
+.candidate-edit label { display: grid; grid-template-columns: 6em repeat(3, minmax(0, 1fr)); gap: 3px; margin-block: 4px; align-items: center; }
+.candidate-edit input { width: 100%; min-width: 0; }
 </style>

@@ -1,6 +1,7 @@
 import type Editor from './Editor';
 import { ColorModeEnum } from 'pc-editor';
 import { loadTrialScene, setSceneFilter } from './trialScene';
+import { detectionColors } from './trialDetectionColors';
 
 export const localTrial = import.meta.env.DEV && location.pathname === '/local-trial';
 export const trialDisplay = { background: '#2b3031', points: '#b3bfb3', pointSize: 2 };
@@ -19,9 +20,10 @@ export async function initLocalFrame(editor: Editor) {
     });
     Object.assign(editor.bsState, { datasetId: 'local', datasetName: 'nuScenes scene-0061',
         datasetType: 'LIDAR_FUSION', user: { id: 'local', nickname: 'Local' } });
-    editor.setClassTypes([['Car', '#54bfff'], ['Pedestrian', '#ffbc57'], ['Cyclist', '#70d18a']]
+    editor.setClassTypes(Object.entries({ ...detectionColors, Cyclist: '#70d18a' })
         .map(([name, color]) => ({ id: name, name, label: name, color, attrs: [] })));
-    setSceneFilter(editor, 'all');
+    editor.state.config.showImgView = true;
+    setSceneFilter(editor, 'key');
 }
 
 export { readLocalObjects, saveLocalFrames } from './trialAnnotations';

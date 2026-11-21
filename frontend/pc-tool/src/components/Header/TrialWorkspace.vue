@@ -1,7 +1,7 @@
 <template>
     <fieldset class="trial-workspace" :disabled="disabled" aria-label="扫描帧与标注">
         <label>扫描 <select data-testid="trial-mode" :value="mode" @change="changeMode">
-            <option value="all">全部帧</option><option value="key">关键帧</option>
+            <option value="key">图像配对帧</option><option value="all">全部扫描</option>
         </select></label>
         <div class="trial-pager">
             <button type="button" title="上一帧" data-testid="trial-prev" :disabled="index <= 0" @click="navigate(index - 1)">‹</button>
@@ -18,7 +18,7 @@
         <button type="button" data-testid="trial-assign" :disabled="!selection || !track.trim()" @click="assign">分配轨迹</button>
         <button type="button" data-testid="trial-export" @click="download">导出 JSON</button>
         <label class="trial-file">导入 JSON<input type="file" accept=".json,application/json" data-testid="trial-import" @change="upload" /></label>
-        <output :title="selection?.box.bbox_id">{{ selection ? `框 ${selection.box.bbox_id} · 轨迹 ${selection.box.track_id}` : '未选框' }}</output>
+        <output :title="selection ? `框 ${selection.box.bbox_id} · 轨迹 ${selection.box.track_id}` : ''">{{ selection ? '已选框' : '未选框' }}</output>
         <span v-if="error" role="alert">{{ error }}</span>
     </fieldset>
 </template>
@@ -34,7 +34,7 @@ import type { TrialSnapshot } from '../../common/trialAnnotations';
 
 const props = defineProps<{ blocking: boolean }>();
 const editor = useInjectEditor();
-const mode = ref<'all' | 'key'>('all');
+const mode = ref<'all' | 'key'>('key');
 const index = computed(() => editor.state.frameIndex);
 const count = computed(() => editor.state.frames.length);
 const id = computed(() => editor.state.frames[index.value]?.id || '');
@@ -146,9 +146,9 @@ onBeforeUnmount(() => {
 .trial-workspace input, .trial-workspace select { color: inherit; font: inherit; }
 .trial-workspace input[type=number] { width: 4em; }
 .trial-workspace input[list] { width: 7em; }
-.trial-file { position: relative; overflow: hidden; border: 1px solid #9caeb6; background: white; border-radius: 4px; padding: 3px 12px; }
+.trial-file { position: relative; overflow: hidden; }
 .trial-file input { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; }
 .trial-file:focus-within { outline: 2px solid #0066a1; }
-.trial-workspace output { font-size: 0.88em; overflow-wrap: anywhere; }
+.trial-workspace output { font-size: var(--trial-secondary-font); overflow-wrap: anywhere; }
 .trial-workspace [role=alert] { color: #962e20; }
 </style>

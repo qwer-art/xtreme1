@@ -78,8 +78,9 @@ export function acceptCandidates(editor: Editor, candidates: Candidate[]) {
     const seen = new Set<string>();
     candidates.forEach(candidate => {
         const key = `${candidate.scanId}:${candidate.trackId}`;
-        if (seen.has(key) || editor.dataManager.getFrameObject(candidate.scanId)?.some(obj => obj.userData.trackId === candidate.trackId))
-            throw new Error(`目标帧已有该轨迹: ${candidate.scanId}`);
+        if (seen.has(key) || editor.dataManager.getFrameObject(candidate.scanId)?.some(obj =>
+            obj.uuid === candidate.id || obj.userData.trackId === candidate.trackId))
+            throw new Error(`目标帧已有该框或轨迹：${candidate.trackId}`);
         seen.add(key);
     });
     const additions = candidates.map((candidate, index) => ({ frame: targets[index], objects:

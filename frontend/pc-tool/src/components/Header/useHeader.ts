@@ -8,11 +8,16 @@ import screenFull from 'screenfull';
 import { Modal } from 'ant-design-vue';
 import { SideRenderView } from 'pc-render';
 
+export function useEditorBlocking() {
+    const { state, bsState } = useInjectEditor();
+    return computed(() => bsState.saving || bsState.validing || bsState.submitting || bsState.modifying ||
+        [StatusType.Loading, StatusType.Create, StatusType.Play].includes(state.status));
+}
+
 export default function useHeader() {
     let editor = useInjectEditor();
     let $$ = editor.bindLocale(locale);
     let { state, bsState } = editor;
-    let editorState = editor.state;
     let dataIndex = ref(state.frameIndex + 1);
     let iState = reactive({
         fullScreen: false,
@@ -121,17 +126,7 @@ export default function useHeader() {
         win && win.close();
     }
 
-    let blocking = computed(() => {
-        return (
-            bsState.saving ||
-            bsState.validing ||
-            bsState.submitting ||
-            bsState.modifying ||
-            editorState.status === StatusType.Loading ||
-            editorState.status === StatusType.Create ||
-            editorState.status === StatusType.Play
-        );
-    });
+    let blocking = useEditorBlocking();
 
     function onHelp() {
         editor.showModal('ModelHelp', { title: 'Help', width: 1000 }).catch(() => {});
