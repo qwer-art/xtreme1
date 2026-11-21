@@ -36,23 +36,36 @@
         <button type="button" data-testid="trial-export" @click="download"><ExportOutlined aria-hidden="true" /> 导出 JSON</button>
         <label class="trial-file"><ImportOutlined aria-hidden="true" /> 导入 JSON<input type="file" accept=".json,application/json" data-testid="trial-import" @change="upload" /></label>
         </div>
+        <div v-show="panel === 'box'" id="trial-options-box" class="trial-options" role="group" aria-label="三维框修正">
+        <span>中心</span>
+        <label>X <input data-testid="trial-box-x" type="number" step="0.01" v-model.number="geometryX" :disabled="!selection" /></label>
+        <label>Y <input data-testid="trial-box-y" type="number" step="0.01" v-model.number="geometryY" :disabled="!selection" /></label>
+        <label>Z <input data-testid="trial-box-z" type="number" step="0.01" v-model.number="geometryZ" :disabled="!selection" /></label>
+        <span>尺寸</span>
+        <label>长 <input data-testid="trial-box-length" type="number" step="0.01" min="0.01" v-model.number="geometryLength" :disabled="!selection" /></label>
+        <label>宽 <input data-testid="trial-box-width" type="number" step="0.01" min="0.01" v-model.number="geometryWidth" :disabled="!selection" /></label>
+        <label>高 <input data-testid="trial-box-height" type="number" step="0.01" min="0.01" v-model.number="geometryHeight" :disabled="!selection" /></label>
+        <label>航向° <input data-testid="trial-box-yaw" type="number" step="1" v-model.number="geometryYaw" :disabled="!selection" /></label>
+        <button type="button" data-testid="trial-box-apply" :disabled="!selection" @click="applyGeometry">应用修正</button>
+        </div>
         <span v-if="error" role="alert">{{ error }}</span>
     </fieldset>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
-import { ApartmentOutlined, BlockOutlined, ClockCircleOutlined, ExportOutlined, FolderOpenOutlined, ImportOutlined, LeftOutlined, RightOutlined } from '@ant-design/icons-vue';
+import { ApartmentOutlined, BlockOutlined, BorderOutlined, ClockCircleOutlined, ExportOutlined, FolderOpenOutlined, ImportOutlined, LeftOutlined, RightOutlined } from '@ant-design/icons-vue';
 import { Event } from 'pc-editor';
 import { useInjectEditor } from '../../state';
 import { scans, setSceneFilter } from '../../common/trialScene';
 import { setTrialOverlay } from '../../common/trialOverlay';
-import { assignTrack, captureSelected, copySelected, exportAnnotations, importAnnotations, listTracks } from '../../common/trialAnnotations';
+import { assignTrack, captureSelected, copySelected, exportAnnotations, getSelectedGeometry, importAnnotations, listTracks, updateSelectedGeometry } from '../../common/trialAnnotations';
 import type { TrialSnapshot } from '../../common/trialAnnotations';
 
 const props = defineProps<{ blocking: boolean }>();
 const panels = [
     { id: 'overlay', label: '邻帧', icon: BlockOutlined },
+    { id: 'box', label: '修框', icon: BorderOutlined },
     { id: 'track', label: '轨迹', icon: ApartmentOutlined },
     { id: 'file', label: '文件', icon: FolderOpenOutlined },
 ] as const;
@@ -75,7 +88,25 @@ const tracks = ref<string[]>([]);
 const selection = shallowRef<TrialSnapshot | null>(null);
 const departed = shallowRef<TrialSnapshot | null>(null);
 const error = ref('');
-const refreshSelection = () => { selection.value = captureSelected(editor); };
+const geometryX = ref(0);
+const geometryY = ref(0);
+const geometryZ = ref(0);
+const geometryLength = ref(0);
+const geometryWidth = ref(0);
+const geometryHeight = ref(0);
+const geometryYaw = ref(0);
+const refreshSelection = () => {
+    selection.value = captureSelected(editor);
+    const geometry = getSelectedGeometry(editor);
+    if (!geometry) return;
+    geometryX.value = Number(geometry.center[0].toFixed(3));
+    geometryY.value = Number(geometry.center[1].toFixed(3));
+    geometryZ.value = Number(geometry.center[2].toFixed(3));
+    geometryLength.value = Number(geometry.size[0].toFixed(3));
+    geometryWidth.value = Number(geometry.size[1].toFixed(3));
+    geometryHeight.value = Number(geometry.size[2].toFixed(3));
+    geometryYaw.value = Number((geometry.yaw * 180 / Math.PI).toFixed(2));
+};
 const refreshTracks = () => { tracks.value = listTracks(editor); };
 const report = (cause: unknown) => { error.value = cause instanceof Error ? cause.message : String(cause); };
 
@@ -140,6 +171,13 @@ function upload(event: globalThis.Event) {
         departed.value = null;
         refreshTracks();
     });
+}
+function applyGeometry() {
+    return run(() => updateSelectedGeometry(editor, {
+        center: [geometryX.value, geometryY.value, geometryZ.value],
+        size: [geometryLength.value, geometryWidth.value, geometryHeight.value],
+        yaw: geometryYaw.value * Math.PI / 180,
+    }));
 }
 function arrows(event: KeyboardEvent) {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;

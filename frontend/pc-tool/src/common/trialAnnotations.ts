@@ -175,3 +175,30 @@ export async function importAnnotations(editor: Editor, data: unknown): Promise<
         throw error;
     }
 }
+
+export type TrialGeometry = { center: [number, number, number]; size: [number, number, number]; yaw: number };
+export function getSelectedGeometry(editor: Editor): TrialGeometry | null {
+    const box = selected(editor);
+    if (!box) return null;
+    return {
+        center: [box.position.x, box.position.y, box.position.z],
+        size: [box.scale.x, box.scale.y, box.scale.z],
+        yaw: box.rotation.z,
+    };
+}
+
+export function updateSelectedGeometry(editor: Editor, geometry: TrialGeometry): void {
+    const box = selected(editor);
+    if (!box) throw new Error('请先选中一个三维框');
+    if (!geometry.center.every(Number.isFinite) || !geometry.size.every(value => Number.isFinite(value) && value > 0) || !Number.isFinite(geometry.yaw))
+        throw new Error('几何参数无效');
+    editor.cmdManager.execute('update-transform', {
+        object: box,
+        transform: {
+            position: vector(geometry.center),
+            scale: vector(geometry.size),
+            rotation: new Euler(0, 0, geometry.yaw),
+        },
+    });
+    editor.updateTrack();
+}

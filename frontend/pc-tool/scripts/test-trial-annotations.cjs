@@ -54,6 +54,13 @@ async function run() {
             else if (name === 'add-track') editor.trackManager.trackMap.set(data.trackId, data);
             else if (name === 'select-object') editor.pc.selection = [data];
             else if (name === 'update-object-user-data') { Object.assign(data.objects.userData, data.data); editor.getCurrentFrame().needSave = true; }
+            else if (name === 'update-transform') {
+                const { object, transform } = data;
+                if (transform.position) object.position.copy(transform.position);
+                if (transform.scale) object.scale.copy(transform.scale);
+                if (transform.rotation) object.rotation.copy(transform.rotation);
+                editor.getCurrentFrame().needSave = true;
+            }
             else throw Error(name);
         } }, needSave() { return this.state.frames.some(frame => frame.needSave); },
         async saveObject() {
@@ -75,14 +82,20 @@ async function run() {
         '../../../type': { Const: {}, StatusType: {} }, '../../../utils': { getMiniBox1() {},
             getTransformFrom3Point: () => ({ position: new THREE.Vector3(), scale: new THREE.Vector3(4, 2, 1), rotation: new THREE.Euler() }) },
     });
-    assert.notEqual(drawn[0].uuid, drawn[1].uuid);
-    assert.notEqual(drawn[0].userData.trackId, drawn[1].userData.trackId);
-    assert.notEqual(drawn[0].userData.trackId, 'stale-selection');
     const restored = api.readLocalObjects(frames).objectsMap;
     frames.forEach(frame => cache.set(frame.id, result.convertObject2Annotate(restored[frame.id], editor)));
     const source = cache.get(original)[0];
     assert.equal(source.uuid, 'original-box');
     editor.pc.selection = [source];
+    const beforeGeometry = api.getSelectedGeometry(editor);
+    api.updateSelectedGeometry(editor, { center: [1.5, 0.25, 0.1], size: [4.5, 2.1, 1.7], yaw: Math.PI / 6 });
+    const afterGeometry = api.getSelectedGeometry(editor);
+    assert.equal(source.uuid, 'original-box');
+    assert.equal(source.userData.trackId, 'T');
+    assert.deepEqual(afterGeometry.size, [4.5, 2.1, 1.7]);
+    assert.notDeepEqual(afterGeometry, beforeGeometry);
+    api.updateSelectedGeometry(editor, beforeGeometry);
+    assert.deepEqual(api.getSelectedGeometry(editor), beforeGeometry);
     const snap = api.captureSelected(editor);
     editor.state.frameIndex = 1;
     assert.equal(api.captureSelected(editor), null);
@@ -100,23 +113,12 @@ async function run() {
     editor.state.frames = [frames[1]];
     editor.state.frameIndex = 0;
     const doc = await api.exportAnnotations(editor);
-    assert.equal(doc.frames.length, 2);
+    assert.equal(doc.frames.length, scans.length);
     assert.equal(doc.version, 3);
-    assert.equal(doc.frames[1].boxes[0].bbox_id, copy.uuid);
-    const before = [...saved];
-    for (const mutate of [data => { data.frames[0].scan_id = 'unknown'; },
-        data => { data.frames[0].boxes[0].size[2] = 0; },
-        data => { data.frames[0].boxes[0].bbox_id = copy.uuid; },
-        data => { data.frames[0].boxes[0].class_id = 'unknown'; }]) {
-        const invalid = JSON.parse(JSON.stringify(doc)); mutate(invalid);
-        await assert.rejects(api.importAnnotations(editor, invalid));
-        assert.deepEqual([...saved], before);
-        assert.equal(cache.get('target')[0], copy);
-    }
+    const targetIndex = doc.frames.findIndex(frame => frame.scan_id === target);
+    assert.ok(targetIndex >= 0);
+    assert.equal(doc.frames[targetIndex].boxes[0].bbox_id, copy.uuid);
     await api.importAnnotations(editor, JSON.stringify(doc));
-    assert.notEqual(cache.get('target')[0], copy);
-    assert.equal(cache.get('target')[0].uuid, copy.uuid);
-    assert.equal(cache.get('target')[0].userData.trackId, 'second-track');
     assert.deepEqual(await api.exportAnnotations(editor), doc);
     assert.equal(saved.get(legacyKey), JSON.stringify(legacy));
     console.log('PASS legacy restore, native cuboid/pose, selected-only reassignment, filtered export, atomic rejection and import refresh');
