@@ -7,7 +7,7 @@ export function centerPointPreview(editor: Editor, candidates: CenterPointCandid
     const group = new THREE.Group();
     group.name = 'centerpoint-preview';
     const hitMaterial = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
-    const parts = candidates.map(item => {
+    const parts = candidates.map((item, index) => {
         const [length, width, height] = item.size;
         const box = new THREE.Mesh(new THREE.BoxGeometry(length, width, height), hitMaterial);
         box.visible = false;
@@ -20,12 +20,14 @@ export function centerPointPreview(editor: Editor, candidates: CenterPointCandid
         const arrow = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position',
             new THREE.Float32BufferAttribute([0,0,top, tip,0,top, base,wing,top, tip,0,top, base,-wing,top, tip,0,top], 3)), material);
         arrow.name = 'heading';
+        const shortId = (value: string) => value.match(/(\d+[^\/]*)$/)?.[1]?.replace(/[^a-zA-Z0-9_-]/g, '').slice(-8) || value.slice(-8);
+        const trackId = item.trackName === '未跟踪' ? item.trackName : shortId(item.trackName);
         const canvas = document.createElement('canvas');
-        canvas.width = 224; canvas.height = 36;
+        canvas.width = 180; canvas.height = 32;
         const context = canvas.getContext('2d')!;
         context.fillStyle = '#172328'; context.fillRect(0, 0, canvas.width, canvas.height);
-        context.fillStyle = color; context.font = 'bold 24px sans-serif'; context.textAlign = 'center';
-        context.fillText(`${item.category} ${item.score.toFixed(2)}`, 112, 26);
+        context.fillStyle = color; context.font = 'bold 20px sans-serif'; context.textAlign = 'center';
+        context.fillText(`#${index + 1} ID:${trackId}  ${item.score.toFixed(2)}`, 90, 23);
         const texture = new THREE.CanvasTexture(canvas);
         const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false, depthWrite: false, sizeAttenuation: false }));
         label.scale.set(.075, .012, 1); label.position.z = top + .3;
