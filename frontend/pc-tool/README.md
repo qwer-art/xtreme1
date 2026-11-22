@@ -111,9 +111,7 @@ Rebuild the offline proposals from the original LiDAR scans (not needed for norm
 cd /home/jerett/catkin_ws/src/xtreme1/frontend/pc-tool && env -u PYTHONPATH PYTHONDONTWRITEBYTECODE=1 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 ~/anaconda3/envs/point_pillar/bin/python scripts/build-centerpoint.py --build
 ```
 
-For a missed target, expand 辅助标注 and enable Point-SAM. The button displays the current tool. Point-SAM is off by default and independent of the CenterPoint run. Click a target point in the main cloud to preview its mask and box.
-Add foreground points or switch to background points to refine the same candidate automatically.
-Accept to save the box and start the next target, or reject it. Model inference requires the local service on port 3211.
+漏检时按 `P` 开关 Point-SAM，按 `Q` 点目标前景生成候选；误选时按 `E` 补背景点。为每个候选选择类别后点「确认并保存」，错框点「拒绝」。Point-SAM 使用本机 3211 端口，独立于 CenterPoint。
 For manual annotation, select Car, Pedestrian or Cyclist in Instances.
 Choose the manual or AI Box method in the header, then press **F**. In manual mode,
 click three footprint corners; in AI Box mode, drag a rectangle around one target

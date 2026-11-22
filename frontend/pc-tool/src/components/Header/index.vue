@@ -135,13 +135,23 @@
     <section v-if="localTrial" class="trial-controls" :style="toolbarStyle" aria-label="标注工具栏">
         <TrialWorkspace :blocking="blocking" />
         <div class="trial-model-bar">
-            <div id="trial-prelabel-controls" class="trial-methods" role="group" aria-label="整段预标注"></div>
-            <div id="trial-assist-controls" class="trial-methods" role="group" aria-label="单目标辅助标注"></div>
+            <div class="trial-workflow-group" role="group" aria-label="整帧预标注">
+                <strong class="trial-group-label">整帧预标注</strong>
+                <div id="trial-prelabel-controls" class="trial-methods"></div>
+            </div>
+            <div class="trial-workflow-divider" aria-hidden="true"></div>
+            <div class="trial-workflow-group" role="group" aria-label="单目标辅助">
+                <strong class="trial-group-label">单目标辅助</strong>
+                <div id="trial-assist-controls" class="trial-methods"></div>
+            </div>
         </div>
+        <div id="trial-point-sam-controls" class="trial-point-sam-row" aria-label="Point-SAM 点选工具"></div>
         <div v-show="shortcutsOpen" id="trial-shortcuts" class="trial-shortcuts">
             <strong>常用快捷键</strong>
+            <span><kbd>P</kbd>Point-SAM 开/关</span>
+            <span><kbd>Q</kbd>前景点</span><span><kbd>E</kbd>背景点</span>
             <span><kbd>F</kbd>{{ state.config.boxMethod === 'AI' ? '拖框拟合' : '三点建框' }}</span>
-            <span><kbd>A/D</kbd><kbd>Q/E</kbd><kbd>W/S</kbd>移框</span>
+            <span><kbd>A/D</kbd><kbd>Q/E</kbd><kbd>W/S</kbd>移框（Point-SAM 关闭时）</span>
             <span><kbd>Z/X</kbd>转向</span><span><kbd>Del</kbd>删除</span>
             <span><kbd>Ctrl+Z</kbd>撤销</span><span><kbd>Ctrl+S</kbd>保存</span>
             <button type="button" @click="onHelp">完整快捷键表</button>
@@ -233,18 +243,23 @@
         font-family: "Noto Sans CJK SC", "WenQuanYi Micro Hei", sans-serif;
         font-size: var(--trial-ui-font);
         line-height: 1.4;
-        .trial-model-bar, .trial-shortcuts, .trial-methods { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+        .trial-model-bar, .trial-shortcuts, .trial-methods, .trial-workflow-group { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
         .trial-model-bar { border-top: 1px solid #44474e; padding-top: 5px; gap: 5px 16px; }
-        #trial-assist-controls { border-inline-start: 1px solid #585b64; padding-inline-start: 12px; }
+        .trial-workflow-group { min-width: 0; }
+        .trial-group-label { color: #aeb8c4; font-size: var(--trial-secondary-font); white-space: nowrap; }
+        .trial-workflow-divider { align-self: stretch; width: 1px; min-height: 28px; background: #585b64; }
+        .trial-point-sam-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 5px 8px; border-inline-start: 3px solid #67b9d1; background: #202c32; }
+        .trial-point-sam-row:empty { display: none; }
+        .trial-methods kbd { font: 600 .85em/1.3 monospace; border: 1px solid #858b96; border-radius: 2px; padding: 0 4px; }
         #trial-prelabel-controls output { font-size: var(--trial-secondary-font); }
-        .trial-assist-options { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
-        .assist-picker[aria-expanded=true] { border-color: #73b4d4; }
         .trial-shortcuts { color: #dce0e8; font-size: var(--trial-secondary-font); }
         strong { font-weight: 600; }
         .trial-shortcuts span { display: inline-flex; gap: 4px; align-items: center; white-space: nowrap; }
         kbd { font: 600 1em/1.4 monospace; border: 1px solid #777e8a; padding: 0 4px; border-radius: 3px; }
         @media (max-width: 680px) {
-            #trial-assist-controls { padding-inline-start: 0; border: 0; }
+            .trial-model-bar { align-items: flex-start; }
+            .trial-workflow-divider { display: none; }
+            .trial-workflow-group { flex-basis: 100%; }
             max-height: 36vh;
             overflow-y: auto;
         }

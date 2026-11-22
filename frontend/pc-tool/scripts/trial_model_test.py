@@ -64,7 +64,6 @@ def main():
     click = int(candidates[np.linalg.norm(local[candidates], axis=1).argmin()])
     body = dict(
         scan_id=scan["id"],
-        category="car",
         points=points.tolist(),
         prompts=[dict(index=click, positive=True)],
     )

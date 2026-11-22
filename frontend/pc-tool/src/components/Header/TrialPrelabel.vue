@@ -1,7 +1,7 @@
 <template>
-    <label>预标注模型 <select data-testid="candidate-model" :value="model" @change="$emit('update:model', ($event.target as HTMLSelectElement).value)">
+    <select aria-label="预标注模型" data-testid="candidate-model" :value="model" @change="$emit('update:model', ($event.target as HTMLSelectElement).value)">
         <option value="CenterPoint">CenterPoint</option><option value="manual">关闭预标注</option>
-    </select></label>
+    </select>
     <button type="button" class="trial-run" data-testid="centerpoint-run" :disabled="model !== 'CenterPoint' || !job || pending || running || !!connectionError" @click="start"><PlayCircleOutlined /> 开始推理</button>
     <output data-testid="centerpoint-run-status" :data-state="job?.state" role="status" :title="connectionError || job?.error">
         {{ connectionError ? '状态未连接' : pending ? '提交中' : job ? labels[job.state] : '连接中' }}

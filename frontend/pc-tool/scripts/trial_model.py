@@ -21,11 +21,12 @@ class InvalidInput(ValueError):
 
 
 def parse(request):
-    if not isinstance(request, dict) or not all(
-        isinstance(request.get(key), str) and request[key].strip()
-        for key in ("scan_id", "category")
+    if (
+        not isinstance(request, dict)
+        or not isinstance(request.get("scan_id"), str)
+        or not request["scan_id"].strip()
     ):
-        raise InvalidInput("scan_id and category must be nonempty strings")
+        raise InvalidInput("scan_id must be a nonempty string")
     points = request.get("points")
     if not isinstance(points, list) or not 3 <= len(points) <= 100000:
         raise InvalidInput("expected 3 to 100000 XYZ points")

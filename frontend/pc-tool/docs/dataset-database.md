@@ -69,7 +69,15 @@ xtreme1/
 
 切换场景时更改两个环境变量并重启服务。端口占用时改用空闲端口，浏览器和检查命令同步改端口。此流程使用 Vite 本机服务，不需要 Docker、Python 或重新推理。
 
-只有**从原版 nuScenes mini 重建示例输入**才使用 `node scripts/generate-local-scene.cjs --ensure /path/to/v1.0-mini`（在 `frontend/pc-tool` 下执行）。该导入器固定生成 `scene-0061`。自采数据直接按下表适配；重新运行 CenterPoint 或 Point-SAM 另需配置对应模型、环境和数据路径，见[点云工具操作说明](../README.md)。
+**另一个可标场景：** 同一数据集下的 `scene-0103/` 是行人和骑行者场景，含 389 帧点云、40 个六相机配对帧（240 张图）。已整理原始输入，未生成模型候选或人工标注。按上面的启动步骤将 `XTREME1_SCENE_ID` 改为 `scene-0103` 即可查看。
+
+从原版 nuScenes mini 导出该场景时，在 `frontend/pc-tool` 下执行：
+
+```bash
+XTREME1_SCENE_ID=scene-0103 node scripts/generate-local-scene.cjs --ensure "$HOME/datasets/locomotion/nuscenes/v1.0-mini"
+```
+
+`--ensure` 会跳过已完整导出的输入。自采数据直接按下表适配；重新运行模型所需环境见[点云工具操作说明](../README.md)。
 
 ## 数据接口：自采场景如何接入
 

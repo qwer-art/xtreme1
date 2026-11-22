@@ -28,7 +28,8 @@ export function pickVertex(cloud: THREE.Points, camera: THREE.Camera, rect: DOMR
         const dx = rect.left + (point.x + 1) * rect.width / 2 - x;
         const dy = rect.top + (1 - point.y) * rect.height / 2 - y;
         const squared = dx * dx + dy * dy;
-        if (squared < distance || (squared === distance && point.z < depth)) {
+        if (squared > 36) continue;
+        if (point.z < depth || (point.z === depth && squared < distance)) {
             best = index; distance = squared; depth = point.z;
         }
     }
@@ -43,18 +44,20 @@ export function checkedShape(value: { center: number[]; size: number[]; yaw: num
     return { center: value.center, size: value.size, yaw: value.yaw, elapsed_ms: value.elapsed_ms };
 }
 
-export async function segment(scanId: string, cloud: THREE.Points, prompts: Prompt[], category: string, signal: AbortSignal) {
+export async function segment(scanId: string, cloud: THREE.Points, prompts: Prompt[], signal: AbortSignal) {
     const positions = cloud.geometry.getAttribute('position');
     const points = Array.from({ length: positions.count }, (_, index) =>
         [positions.getX(index), positions.getY(index), positions.getZ(index)]);
     const response = await fetch('/trial-model/segment', { method: 'POST', signal,
-        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scan_id: scanId, points, prompts, category }) });
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scan_id: scanId, points, prompts }) });
     if (!response.ok) throw new Error(`模型分割 HTTP ${response.status}: ${(await response.text()).slice(0, 200)}`);
     const result = await response.json();
     const shape = checkedShape(result);
     if (!Array.isArray(result.indices) || !result.indices.length ||
         !result.indices.every((index: number) => Number.isInteger(index) && index >= 0 && index < points.length))
         throw new Error('模型未返回有效点掩码');
+    if (shape.size[2] < 0.12 && Math.max(shape.size[0], shape.size[1]) > 1.5)
+        throw new Error(`结果像地面回波，不是立体目标（高 ${shape.size[2].toFixed(2)} m）；请把前景点移到目标立面`);
     return { ...shape, indices: result.indices as number[] };
 }
 

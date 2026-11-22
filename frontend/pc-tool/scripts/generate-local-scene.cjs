@@ -5,10 +5,11 @@ const { Matrix4, Quaternion } = require('three');
 
 const root = process.argv.slice(2).find(arg => arg !== '--ensure') || '/home/jerett/datasets/locomotion/nuscenes/v1.0-mini';
 const database = process.env.XTREME1_DB_ROOT || path.join(require('node:os').homedir(), 'datasets/perception/xtreme1/nuscenes-v1.0-mini');
-const sceneRoot = path.join(database, 'scene-0061');
+const sceneName = process.env.XTREME1_SCENE_ID || 'scene-0061';
+assert(/^scene-[0-9]{4}$/.test(sceneName), 'Expected a nuScenes scene ID such as scene-0103');
+const sceneRoot = path.join(database, sceneName);
 const output = path.join(sceneRoot, 'source');
 const manifest = path.join(output, 'index.json');
-const sceneName = 'scene-0061';
 const channels = ['CAM_FRONT', 'CAM_FRONT_RIGHT', 'CAM_BACK_RIGHT', 'CAM_BACK', 'CAM_BACK_LEFT', 'CAM_FRONT_LEFT'];
 const readJson = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 const cloudDir = path.join(output, 'cloud');
@@ -23,7 +24,8 @@ function complete() {
         const pose = readJson(path.join(paramDir, 'pose.json'));
         const calib = readJson(path.join(paramDir, 'calib.json'));
         return schema === 'xtreme1-frame-index-v1' && dataset.schema === 'xtreme1-dataset-v1' &&
-            scene === sceneName && frames.length === 382 &&
+            scene === sceneName && dataset.scene === sceneName && dataset.sourceDataset === 'nuScenes/v1.0-mini' &&
+            frames.length > 0 && frames.length === dataset.frameCount &&
             frames.every(frame => fs.statSync(sourceFile(frame.cloud), { throwIfNoEntry: false })?.size > 0 &&
                 pose.frames[String(frame.timestamp)]?.LIDAR_TOP?.worldFromSensor?.length === 16 &&
                 (!frame.images.length || frame.images.every(image =>
@@ -48,13 +50,12 @@ function writeCloud(record, outputFile) {
 }
 
 function generate() {
-    if ((process.env.XTREME1_SCENE_ID || sceneName) !== sceneName) throw new Error(`This exporter only supports ${sceneName}`);
     if (fs.existsSync(path.join(output, 'dataset.json')) && readJson(path.join(output, 'dataset.json')).sourceDataset !== 'nuScenes/v1.0-mini')
         throw new Error(`Preserving other dataset at ${output}`);
-    for (const dir of [cloudDir, imageDir, paramDir]) fs.mkdirSync(dir, { recursive: true });
     const table = name => readJson(path.join(root, 'v1.0-mini', `${name}.json`));
     const index = name => new Map(table(name).map(record => [record.token, record]));
     const scene = table('scene').find(record => record.name === sceneName);
+    assert(scene, `Scene ${sceneName} not found in ${root}`);
     const samples = new Map(table('sample').filter(record => record.scene_token === scene.token).map(record => [record.token, record.timestamp]));
     const sensors = index('sensor');
     const calibrations = index('calibrated_sensor');
@@ -70,7 +71,7 @@ function generate() {
         if (record.filename.startsWith('samples/') && channels.includes(channel)) cameras.set(`${record.sample_token}/${channel}`, record);
     }
     lidar.sort((first, second) => first.timestamp - second.timestamp);
-    assert.equal(lidar.length, 382);
+    assert.equal(lidar.filter(record => record.is_key_frame).length, scene.nbr_samples, `Missing keyframes for ${sceneName}`);
     assert.equal(new Set(lidar.map(record => String(record.timestamp))).size, lidar.length, 'LiDAR timestamps must be unique');
     const sensorsCalibration = new Map();
     for (const record of [...lidar, ...cameras.values()]) {
@@ -80,6 +81,7 @@ function generate() {
         if (previous) assert(previous.every((value, index) => Math.abs(value - current[index]) < 1e-10), `Calibration changed within ${channel}`);
         else sensorsCalibration.set(channel, current);
     }
+    for (const dir of [cloudDir, imageDir, paramDir]) fs.mkdirSync(dir, { recursive: true });
     const frames = lidar.map(record => {
         const stamp = String(record.timestamp);
         const cloud = `cloud/${stamp}.pcd`;
