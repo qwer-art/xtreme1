@@ -48,7 +48,7 @@ Previous/next changes the LiDAR cloud and its camera images together. Missing ca
 Choose 全部扫描 to browse all 382 scans. Both modes use the same LiDAR scan ID for annotations.
 Choose a camera thumbnail to change the main image; double-click the image for a larger view. On desktop the right column shares space between review and the three orthographic views; drag the horizontal divider to resize them.
 
-Camera images show the visible LiDAR boxes using each camera's calibration. Compare a box against the object in the main image, the six desktop thumbnails or the enlarged view. Adjusting a box updates the outline; hiding a candidate category removes its outlines in both views. Unpaired scans have no image to project onto.
+Camera images show the visible LiDAR boxes using each camera's calibration. Compare a box against the object in the main image, the six desktop thumbnails or the enlarged view. Adjusting a box updates the outline; hiding a candidate category removes its outlines in both views. Unpaired scans have no image to project onto. Selecting a CenterPoint candidate displays its frame index and track ID on the active camera; the overhead, side and rear views focus the same box and highlight its points.
 
 Use 字号 next to the scene name to set the toolbar text to 18, 24 (default), 30 or 36 px. This browser remembers the setting without changing scene zoom.
 

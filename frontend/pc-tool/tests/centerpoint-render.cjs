@@ -3,6 +3,10 @@ function inspectScene() {
     const position = cloud?.geometry.attributes.position;
     if (!position?.count) return null;
     const previews = [];
+    const previewGroup = editor.pc.scene.getObjectByName('centerpoint-preview');
+    const selectedPreview = previewGroup?.userData.selectedId || '';
+    const activeEdge = previewGroup?.children.find(object => object.name === selectedPreview);
+    const activeLabel = activeEdge?.getObjectByName('centerpoint-label');
     editor.pc.scene.updateMatrixWorld(true);
     editor.pc.scene.traverseVisible(object => {
         if (!object.isLineSegments || !object.material.visible) return;
@@ -22,7 +26,10 @@ function inspectScene() {
         const direction = arrow[1].clone().sub(arrow[0]);
         previews.push({ id: object.name, corners: [...corners.values()], lengthToTip: direction.length(), yaw: Math.atan2(direction.y, direction.x) });
     });
-    return { id: editor.getCurrentFrame()?.id, count: position.count, previews,
+    const sideViews = editor.pc.renderViews.filter(view => typeof view.setPreviewTarget === 'function')
+        .map(view => ({ axis: view.axis, targetId: view.previewTarget?.parent?.name, visualId: view.previewVisual?.name }));
+    return { id: editor.getCurrentFrame()?.id, count: position.count, previews, selectedPreview,
+        previewLabel: activeLabel?.userData.text || '', sideViews,
         probes: [0, Math.floor(position.count / 2), position.count - 1].map(index => cloud.position.clone().fromBufferAttribute(position, index).applyMatrix4(cloud.matrixWorld).toArray()),
         accepted: editor.pc.getAnnotate3D().filter(object => !object.isHolder).map(object => ({
             id: object.userData.id || object.uuid, trackId: object.userData.trackId, category: object.userData.classId,

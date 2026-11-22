@@ -48,6 +48,8 @@ export default class SideRenderView extends Render {
     camera: THREE.OrthographicCamera;
     cameraHelper?: THREE.CameraHelper;
     object: Box | null;
+    previewTarget: THREE.Mesh | null = null;
+    previewVisual: THREE.Object3D | null = null;
     projectRect: THREE.Box3;
     axis: axisType;
     alignAxis: THREE.Vector3;
@@ -114,6 +116,8 @@ export default class SideRenderView extends Render {
 
     initEvent() {
         this.pointCloud.addEventListener(Event.SELECT, () => {
+            this.previewTarget = null;
+            this.previewVisual = null;
             let object = this.pointCloud.selection.find((annotate) => annotate instanceof Box);
             if (object) {
                 this.enableFit = true;
@@ -139,6 +143,16 @@ export default class SideRenderView extends Render {
                 this.render();
             }
         });
+    }
+
+    setPreviewTarget(target: THREE.Mesh | null, visual: THREE.Object3D | null) {
+        this.previewTarget = target;
+        this.previewVisual = visual;
+        if (target && !this.object) this.fitPreviewTarget();
+        else {
+            if (!target && !this.object) this.overviewGeometryId = -1;
+            this.render();
+        }
     }
 
     setAxis(axis: axisType) {
@@ -171,10 +185,10 @@ export default class SideRenderView extends Render {
         return pos;
     }
 
-    updateProjectRect() {
-        if (!this.object) return;
+    updateProjectRect(object: THREE.Mesh | Box | null = this.object || this.previewTarget) {
+        if (!object) return;
 
-        let { axis, object, camera } = this;
+        let { axis, camera } = this;
 
         camera.updateMatrixWorld();
         object.updateMatrixWorld();
@@ -182,27 +196,7 @@ export default class SideRenderView extends Render {
         if (!object.geometry.boundingBox) object.geometry.computeBoundingBox();
         let bbox = object.geometry.boundingBox as any as THREE.Box3;
 
-        let minProject = new THREE.Vector3().copy(bbox.min);
-        let maxProject = new THREE.Vector3().copy(bbox.max);
-
-        minProject.applyMatrix4(object.matrixWorld).applyMatrix4(camera.matrixWorldInverse);
-        maxProject.applyMatrix4(object.matrixWorld).applyMatrix4(camera.matrixWorldInverse);
-
-        let min = new THREE.Vector3();
-        let max = new THREE.Vector3();
-
-        let xMin = Math.min(minProject.x, maxProject.x);
-        let xMax = Math.max(minProject.x, maxProject.x);
-        let yMin = Math.min(minProject.y, maxProject.y);
-        let yMax = Math.max(minProject.y, maxProject.y);
-        let zMin = Math.min(minProject.z, maxProject.z);
-        let zMax = Math.max(minProject.z, maxProject.z);
-
-        min.set(xMin, yMin, zMin);
-        max.set(xMax, yMax, zMax);
-
-        this.projectRect.min.copy(min);
-        this.projectRect.max.copy(max);
+        this.projectRect.copy(bbox).applyMatrix4(object.matrixWorld).applyMatrix4(camera.matrixWorldInverse);
         //  = { min, max };
         // return ;
     }
@@ -237,10 +231,29 @@ export default class SideRenderView extends Render {
         // this.render();
     }
 
+    private fitPreviewTarget() {
+        const object = this.previewTarget;
+        if (!object) return;
+
+        object.updateMatrixWorld(true);
+        const temp = new THREE.Vector3().copy(this.alignAxis).applyMatrix4(object.matrixWorld);
+        this.camera.position.copy(temp);
+        temp.copy(axisUpInfo[this.axis].yAxis.dir)
+            .applyMatrix4(object.matrixWorld)
+            .sub(new THREE.Vector3().applyMatrix4(object.matrixWorld));
+        this.camera.up.copy(temp);
+        temp.set(0, 0, 0).applyMatrix4(object.matrixWorld);
+        this.camera.lookAt(temp);
+        this.updateProjectRect(object);
+        this.updateCameraProject();
+        this.render();
+    }
+
     resetView() {
         this.zoom = 1;
         this.enableFit = true;
         if (this.object) this.fitObject();
+        else if (this.previewTarget) this.fitPreviewTarget();
         else this.overviewGeometryId = -1;
         this.render();
     }
@@ -269,7 +282,8 @@ export default class SideRenderView extends Render {
 
         // debugger
         let cameraW, cameraH;
-        let padding = this.object ? Math.min(rectWidth, rectHeight) * this.paddingPercent
+        let hasTarget = !!(this.object || this.previewTarget);
+        let padding = hasTarget ? Math.min(rectWidth, rectHeight) * this.paddingPercent
             : Math.max(1, Math.max(rectWidth, rectHeight) * 0.08);
         // let padding = (200 * rectWidth) / this.width;
         cameraW = Math.max(rectWidth + padding, (rectHeight + padding) * aspect);
@@ -280,7 +294,7 @@ export default class SideRenderView extends Render {
         this.camera.top = (cameraH / 2) * this.zoom;
         this.camera.bottom = (-cameraH / 2) * this.zoom;
         // debugger
-        this.camera.far = this.object ? projectRect.max.z - projectRect.min.z : 1 - projectRect.min.z;
+        this.camera.far = hasTarget ? projectRect.max.z - projectRect.min.z : 1 - projectRect.min.z;
         this.camera.updateProjectionMatrix();
 
         // this.camera.position.add(this.cameraOffset);
@@ -352,6 +366,29 @@ export default class SideRenderView extends Render {
                     this.renderer.render(object, this.camera);
                 }
             });
+        } else if (this.previewTarget) {
+            const box = this.previewTarget;
+            box.updateMatrixWorld(true);
+            if (!box.geometry.boundingBox) box.geometry.computeBoundingBox();
+            const material = groupPoints.children[0].material as PointsMaterial;
+            const oldDepthTest = material.depthTest;
+            const oldHasFilterBox = material.getUniforms('hasFilterBox');
+            const oldType = material.getUniforms('boxInfo').type;
+            material.depthTest = false;
+            material.setUniforms({
+                hasFilterBox: 1,
+                boxInfo: {
+                    type: 0,
+                    min: box.geometry.boundingBox!.min,
+                    max: box.geometry.boundingBox!.max,
+                    color: this.selectColor,
+                    matrix: this.boxInvertMatrix.copy(box.matrixWorld).invert(),
+                },
+            });
+            this.renderer.render(groupPoints.children[0], this.camera);
+            material.setUniforms({ hasFilterBox: oldHasFilterBox, boxInfo: { type: oldType } });
+            material.depthTest = oldDepthTest;
+            if (this.previewVisual) this.renderer.render(this.previewVisual, this.camera);
         } else {
             const points = groupPoints.children[0] as THREE.Points;
             if (this.overviewGeometryId !== points.geometry.id) this.fitOverview(points);

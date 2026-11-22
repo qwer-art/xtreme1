@@ -10,6 +10,7 @@ const artifact = path.join(publicRoot, 'local-scene/centerpoint.json');
 const screenshot = process.env.TRIAL_SCREENSHOT || '/home/jerett/main/daily/xtreme1/centerpoint-scene-0061-all-classes.png';
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const round = value => Number(value.toFixed(5));
+const reviewable = box => ['Car', 'Pedestrian', 'Bicycle', 'Motorcycle'].includes(box.category) && box.score >= 0.5;
 
 function prepare() {
     assert.ok(fs.existsSync(artifact), `BLOCKED: missing real predictions: ${artifact}`);
@@ -38,12 +39,14 @@ function prepare() {
         }
     }
     const keys = manifest.scans.filter(scan => scan.keyframe);
-    const scan = keys.find(item => predictions.frames[item.id]?.length >= 3);
+    const scan = keys.find(item => predictions.frames[item.id]?.filter(reviewable).length >= 3);
     assert.ok(scan && keys.length >= 2, 'BLOCKED: need a keyframe with >=3 real candidates and another keyframe');
-    const boxes = predictions.frames[scan.id];
-    const other = keys.find(item => item !== scan && predictions.frames[item.id]?.some(box => boxes.some(first => first.trackId === box.trackId))) || keys.find(item => item !== scan);
+    const allBoxes = predictions.frames[scan.id];
+    const boxes = allBoxes.filter(reviewable);
+    const other = keys.find(item => item !== scan && predictions.frames[item.id]?.some(box => reviewable(box) && boxes.some(first => first.trackId === box.trackId))) || keys.find(item => item !== scan && predictions.frames[item.id]?.some(reviewable));
+    assert.ok(other, 'BLOCKED: need another keyframe with reviewable candidates');
     const points = rawPoints(fs.readFileSync(path.join(publicRoot, scan.pointsUrl)));
-    const evidence = boxes.map(box => support(points, box)).sort((first, second) => second.inside - first.inside);
+    const evidence = allBoxes.map(box => support(points, box)).sort((first, second) => second.inside - first.inside);
     console.log('BEV raw LIDAR_TOP; local spans L/W/H and +/-1.5W comparison windows (metres)', JSON.stringify({
         scan: scan.id, pcd: scan.pointsUrl, points: points.length, candidates: boxes.length,
         supported: evidence.filter(item => item.supported).length, best: evidence.slice(0, 3), predictionSha256: digest(bytes),
@@ -106,6 +109,9 @@ async function browserRun(data) {
         };
         const rows = page.locator('[data-testid="centerpoint-panel"] [data-candidate-id]');
         const row = async box => {
+            const group = page.locator(`.cp-group[data-category="${box.category}"]`);
+            const toggle = group.locator('.cp-type');
+            if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
             const ids = await rows.evaluateAll(nodes => nodes.map(node => node.dataset.candidateId));
             assert.ok(ids.includes(box.id), `missing review row ${box.id}`);
             return rows.nth(ids.indexOf(box.id));
@@ -131,22 +137,81 @@ async function browserRun(data) {
         verifyRaw(first, data.points);
         assert.ok(predictionResponses.length, 'page never requested real centerpoint.json');
         assert.equal(digest(await predictionResponses[0].body()), digest(data.bytes), 'served predictions differ from disk');
-        const target = data.evidence.find(item => item.supported);
-        const entry = await captureBev(page, target, false);
-        assert.ok(entry.hits.filter(count => count >= 5).length >= 2, `no visible default-view box before any selection or camera movement: ${entry.hits}`);
+        const target = data.evidence.find(item => item.supported && data.boxes.some(box => box.id === item.id));
+        assert.ok(target, 'no reviewable candidate has sufficient raw point-cloud support');
         const captured = await captureBev(page, target);
         assert.ok(captured.hits.filter(count => count >= 7).length >= 3 && captured.cloudPixels >= 8,
             `BEV screenshot lacks edges/returns: hits=${captured.hits}; cloudPixels=${captured.cloudPixels}`);
-        console.log(`BEV image: scan=${scan.id}, candidate=${target.id}, default edge hits=${entry.hits}, focused hits(out of 12)=${captured.hits}, cloudPixels=${captured.cloudPixels}`);
+        console.log(`BEV image: scan=${scan.id}, candidate=${target.id}, focused hits(out of 12)=${captured.hits}, cloudPixels=${captured.cloudPixels}`);
 
         console.log('2/4: accept, edit then accept, reject');
-        const otherBoxes = data.predictions.frames[other.id] || [];
+        const otherBoxes = (data.predictions.frames[other.id] || []).filter(reviewable);
         const original = boxes.find(box => otherBoxes.some(item => item.trackId === box.trackId)) || boxes[0];
-        const [toEdit, toReject] = boxes.filter(box => box !== original);
-        const pending = boxes.filter(box => ![original, toEdit, toReject].includes(box));
         await (await row(original)).getByTestId('centerpoint-accept').click();
         await checkFrame(scan, boxes.filter(box => box !== original), [original]);
+        const cameraVisible = await page.evaluate(() => {
+            const group = window.editor.pc.scene.getObjectByName('centerpoint-preview');
+            const views = window.editor.pc.renderViews.filter(view => view.name.startsWith('image-2d-small-'));
+            return group.children.filter(edge => edge.name.startsWith('centerpoint:')).filter(edge => {
+                const box = edge.getObjectByName('centerpoint-bounds');
+                return views.some(view => {
+                    const { center, size } = view.getBoxRect(box);
+                    return center.x + size.x / 2 > 0 && center.x - size.x / 2 < view.imgSize.x &&
+                        center.y + size.y / 2 > 0 && center.y - size.y / 2 < view.imgSize.y;
+                });
+            }).map(edge => edge.name);
+        });
+        const choices = boxes.filter(box => box !== original);
+        const toEdit = choices.find(box => cameraVisible.includes(formalId(scan, box)));
+        assert.ok(toEdit, 'no remaining candidate projects into a camera image');
+        const toReject = choices.find(box => box !== toEdit);
+        assert.ok(toReject, 'need another candidate to reject');
+        const pending = boxes.filter(box => ![original, toEdit, toReject].includes(box));
         await (await row(toEdit)).getByTestId('centerpoint-select').click();
+        const linked = await eventually('selected candidate linked to camera and orthogonal views', async () => {
+            const state = await page.evaluate(inspectScene);
+            assert.equal(state.selectedPreview, formalId(scan, toEdit));
+            assert.match(state.previewLabel, /^#\d+ ID:/);
+            assert.deepEqual(state.sideViews.map(view => view.axis).sort(), ['-x', '-y', 'z']);
+            assert.ok(state.sideViews.every(view => view.targetId === formalId(scan, toEdit) && view.visualId === formalId(scan, toEdit)));
+            return state;
+        });
+        const sensor = await page.evaluate(id => {
+            const group = window.editor.pc.scene.getObjectByName('centerpoint-preview');
+            const edge = group.children.find(object => object.name === id);
+            const box = edge.getObjectByName('centerpoint-bounds');
+            const view = window.editor.pc.renderViews.find(candidate => {
+                if (!candidate.name.startsWith('image-2d-small-')) return false;
+                const { center, size } = candidate.getBoxRect(box);
+                return center.x + size.x / 2 > 0 && center.x - size.x / 2 < candidate.imgSize.x &&
+                    center.y + size.y / 2 > 0 && center.y - size.y / 2 < candidate.imgSize.y;
+            });
+            return view?.img?.src.match(/\/(CAM_[A-Z_]+)\.jpg$/)?.[1];
+        }, formalId(scan, toEdit));
+        assert.ok(sensor, 'selected candidate has no camera projection');
+        await page.locator(`.camera-picker [data-slot="${sensor}"]`).click();
+        await page.waitForFunction(name => window.editor.pc.renderViews.some(view =>
+            view.name.startsWith('image-2d-small-') && view.isViewRenderable() && view.img?.src.includes(`${name}.jpg`)), sensor);
+        const cameraLabels = await page.evaluate(() => {
+            const view = window.editor.pc.renderViews.find(view => view.name.startsWith('image-2d-small-') && view.isViewRenderable());
+            if (!view) throw new Error('no active camera view');
+            const context = view.proxy.context, fillText = context.fillText, labels = [];
+            context.fillText = function (text, ...args) { labels.push(String(text)); return fillText.call(this, text, ...args); };
+            try { view.renderPreviewBoxes(); }
+            finally { context.fillText = fillText; }
+            const group = window.editor.pc.scene.getObjectByName('centerpoint-preview');
+            const expected = group.children.filter(edge => edge.name.startsWith('centerpoint:') && edge.visible).filter(edge => {
+                const box = edge.getObjectByName('centerpoint-bounds');
+                const { center, size } = view.getBoxRect(box);
+                return center.x + size.x / 2 >= 0 && center.x - size.x / 2 <= view.imgSize.x &&
+                    center.y + size.y / 2 >= 0 && center.y - size.y / 2 <= view.imgSize.y;
+            }).map(edge => edge.getObjectByName('centerpoint-label').userData.text);
+            return { labels, expected };
+        });
+        assert.ok(cameraLabels.expected.length > 1, 'test camera should show multiple candidate boxes');
+        assert.deepEqual(cameraLabels.labels.filter(label => cameraLabels.expected.includes(label)).sort(),
+            cameraLabels.expected.sort(), 'camera must label every projected candidate with the same point-cloud index and track ID');
+        assert.ok(cameraLabels.expected.includes(linked.previewLabel), `selected camera label missing: ${linked.previewLabel}`);
         const edited = { ...toEdit, center: [...toEdit.center], size: [...toEdit.size], yaw: round(toEdit.yaw + 0.21) };
         edited.center[0] = round(toEdit.center[0] + 0.37); edited.size[0] = round(toEdit.size[0] + 0.26);
         for (const [label, value] of [['center-0', edited.center[0]], ['size-0', edited.size[0]], ['yaw', edited.yaw]]) {

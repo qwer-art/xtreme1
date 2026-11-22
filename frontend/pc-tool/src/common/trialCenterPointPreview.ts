@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { SideRenderView } from 'pc-render';
 import type Editor from './Editor';
 import type { CenterPointCandidate } from './trialCenterPoint';
 import { detectionColors } from './trialDetectionColors';
@@ -10,7 +11,9 @@ export function centerPointPreview(editor: Editor, candidates: CenterPointCandid
     const parts = candidates.map((item, index) => {
         const [length, width, height] = item.size;
         const box = new THREE.Mesh(new THREE.BoxGeometry(length, width, height), hitMaterial);
+        box.geometry.computeBoundingBox();
         box.visible = false;
+        box.name = 'centerpoint-bounds';
         const color = detectionColors[item.category];
         const material = new THREE.LineBasicMaterial({ color, depthTest: false, depthWrite: false });
         const edges = new THREE.LineSegments(new THREE.EdgesGeometry(box.geometry), material);
@@ -30,6 +33,8 @@ export function centerPointPreview(editor: Editor, candidates: CenterPointCandid
         context.fillText(`#${index + 1} ID:${trackId}  ${item.score.toFixed(2)}`, 90, 23);
         const texture = new THREE.CanvasTexture(canvas);
         const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false, depthWrite: false, sizeAttenuation: false }));
+        label.name = 'centerpoint-label';
+        label.userData.text = `#${index + 1} ID:${trackId}  ${item.score.toFixed(2)}`;
         label.scale.set(.075, .012, 1); label.position.z = top + .3;
         edges.add(box, arrow, label); group.add(edges);
         return { box, item, material, edges, color, arrow, label, texture };
@@ -38,10 +43,16 @@ export function centerPointPreview(editor: Editor, candidates: CenterPointCandid
     return {
         setHidden(categories: ReadonlySet<string>) {
             for (const part of parts) part.edges.visible = !categories.has(part.item.category);
-            editor.pc.render();
+            this.select(group.userData.selectedId || '');
         },
         select(id: string) {
+            group.userData.selectedId = id;
             parts.forEach(part => part.material.color.set(part.item.id === id ? '#faff48' : part.color));
+            const active = parts.find(part => part.item.id === id && part.edges.visible);
+            for (const view of editor.pc.renderViews) {
+                if (view instanceof SideRenderView) view.setPreviewTarget(active?.box || null, active?.edges || null);
+                view.render();
+            }
             editor.pc.render();
         },
         pick(camera: THREE.Camera, mouse: THREE.Vector2) {
@@ -50,6 +61,10 @@ export function centerPointPreview(editor: Editor, candidates: CenterPointCandid
             return hit?.object.parent?.name;
         },
         dispose() {
+            for (const view of editor.pc.renderViews) {
+                if (view instanceof SideRenderView && view.previewTarget?.parent?.parent === group)
+                    view.setPreviewTarget(null, null);
+            }
             group.removeFromParent(); hitMaterial.dispose();
             for (const { box, material, edges, arrow, label, texture } of parts) {
                 box.geometry.dispose(); edges.geometry.dispose(); arrow.geometry.dispose(); material.dispose();
