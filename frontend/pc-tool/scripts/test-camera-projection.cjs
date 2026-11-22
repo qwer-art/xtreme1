@@ -56,20 +56,11 @@ view.renderObjects();
 assert.deepEqual(projected, []);
 console.log('PASS live candidate outlines, parent transforms, hide/removal and accepted identity');
 
-const imageRect = { left: 100, top: 25, bottom: 125, width: 200, height: 100 };
-const image = { naturalWidth: 100, naturalHeight: 100, currentSrc: 'current', getBoundingClientRect: () => imageRect };
-view.img = { src: 'current' };
-view.proxy.clientRect = { left: 30, top: 10, bottom: 210 };
-const viewports = [];
-view.proxy.renderer.setViewport = (...args) => viewports.push(args);
-view.proxy.renderer.setScissor = (...args) => assert.deepEqual(args, viewports.at(-1));
-load('components/ImgView/trialProjection', {}).attachTrialProjection(view, () => image);
-view.renderThumbnail();
-assert.deepEqual(viewports, [[120, 85, 100, 100]]);
-image.currentSrc = 'previous'; view.renderThumbnail();
-image.currentSrc = 'current'; imageRect.width = 0; view.renderThumbnail();
-assert.equal(viewports.length, 1);
-console.log('PASS thumbnail contain fit, stale-image suppression and hidden mobile images');
+view.isViewRenderable = () => false;
+view.renderImageOverlay = () => assert.fail('hidden camera drew points');
+view.renderObjects = () => assert.fail('hidden camera drew boxes');
+view.renderFrame();
+console.log('PASS hidden cameras skip image and projection passes');
 
 const cameraView = Object.assign(Object.create(View.prototype), {
     imgSize: new THREE.Vector2(), width: 512, height: 308, fitMatrix: new THREE.Matrix4(),

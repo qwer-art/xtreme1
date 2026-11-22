@@ -11,6 +11,7 @@ export async function initLocalFrame(editor: Editor) {
     await loadTrialScene();
     await initializeTrialDatabase(scanCatalog(scans));
     editor.state.config.boxMethod = 'STANDARD';
+    editor.state.config.renderProjectPoint = true;
     editor.state.config.pointColorMode = ColorModeEnum.PURE;
     editor.state.config.singleColor = trialDisplay.points;
     editor.state.config.pointSize = trialDisplay.pointSize;

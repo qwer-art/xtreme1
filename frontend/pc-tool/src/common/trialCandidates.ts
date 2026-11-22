@@ -7,7 +7,7 @@ export type Triple = [number, number, number];
 export interface Shape { center: Triple; size: Triple; yaw: number; elapsed_ms: number }
 export interface Candidate extends Shape {
     id: string; scanId: string; trackId: string; trackName: string; category: string;
-    indices: number[]; prompts?: Prompt[];
+    indices: number[]; prompts?: Prompt[]; cameraGuided?: boolean;
 }
 export interface Prompt { index: number; positive: boolean }
 
@@ -96,6 +96,7 @@ export function acceptCandidates(editor: Editor, candidates: Candidate[]) {
 export function preview(editor: Editor, candidate: Candidate | undefined, prompts: Prompt[]) {
     const group = new THREE.Group();
     group.name = 'trial-candidate-preview';
+    group.userData.cameraGuided = candidate?.cameraGuided;
     if (candidate) {
         const cube = new THREE.BoxGeometry(...candidate.size);
         const edges = new THREE.LineSegments(new THREE.EdgesGeometry(cube), new THREE.LineBasicMaterial({ color: 0xffcc00, depthTest: false }));

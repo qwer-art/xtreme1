@@ -18,7 +18,7 @@
                 <button type="button" data-testid="trial-instances-tab" :aria-pressed="!reviewing" @click="reviewing = false">Instances</button>
             </nav>
             <section v-show="reviewing" class="trial-review" aria-label="候选审核" data-testid="trial-review-panel">
-                <TrialCandidates :blocking="blocking" :active="samActive" :reviewing="reviewing" @update:active="samActive = $event" />
+                <TrialCandidates :blocking="blocking" :active="samActive" :reviewing="reviewing" @update:active="samActive = $event" @open-review="openReview" />
                 <TrialCenterPoint v-show="prelabel" :blocking="blocking" :visible="reviewing && prelabel" :interactive="!samActive"
                     :refresh-key="refreshKey" />
             </section>
@@ -52,7 +52,8 @@
     const refreshKey = ref('');
     const methods = [{ id: 'STANDARD', label: '手工三点框' }, { id: 'AI', label: 'AI Box · 点云拟合' }] as const;
     onMounted(() => { mounted.value = true; });
-    watch(samActive, active => { if (active) { reviewing.value = true; emit('show-rail'); } });
+    function openReview() { reviewing.value = true; emit('show-rail'); }
+    watch(samActive, active => { if (active) openReview(); });
 </script>
 
 <style lang="less">

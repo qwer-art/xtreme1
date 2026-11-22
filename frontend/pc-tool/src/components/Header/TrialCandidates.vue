@@ -1,6 +1,6 @@
 <template>
     <div v-show="samActive || queue.length || message" class="candidate-tools" data-testid="point-sam-panel">
-        <div class="review-heading"><strong>Point-SAM</strong><output>待审 {{ queue.length }}</output></div>
+        <div class="review-heading"><strong>{{ current?.cameraGuided ? '图上框行人' : '候选审核' }}</strong><output>待审 {{ queue.length }}</output></div>
         <fieldset :disabled="blocked" aria-label="模型候选">
             <div v-show="samActive" class="sam-tools">
             <details><summary>跨帧传播</summary><label>向后 <input v-model.number="reach" aria-label="传播帧数" type="number" min="1" :max="editor.state.frames.length - 1" /> 帧</label>
@@ -8,10 +8,10 @@
             <button type="button" :disabled="!marked.length" @click="accept(queue.filter(item => marked.includes(item.id)))">接受勾选 ({{ marked.length }})</button></details>
             </div>
             <div v-if="queue.length" class="candidate-list" aria-label="待审候选列表">
-                <div v-for="item in queue" :key="item.id" class="candidate-row" :data-sam-id="item.id">
+                <div v-for="item in queue" :key="item.id" class="candidate-row" :class="{ selected: item.id === current?.id }" :data-sam-id="item.id" :data-testid="item.cameraGuided ? 'camera-pedestrian-candidate' : undefined">
                     <input type="checkbox" v-model="marked" :value="item.id" :aria-label="`批量选择 ${item.scanId}`" />
                     <button type="button" :aria-pressed="current?.id === item.id" :title="item.scanId" @click="review(item)">查看 {{ item.category || '未分类' }} · 帧 {{ frameNumber(item.scanId) }}</button>
-                    <span>{{ item.indices.length ? `掩码 ${item.indices.length} 点` : '传播框' }} · {{ Math.round(item.elapsed_ms) }} ms</span>
+                    <span>{{ item.cameraGuided ? `图像框选 · ${item.indices.length} 点` : item.indices.length ? `掩码 ${item.indices.length} 点` : '传播框' }} · {{ Math.round(item.elapsed_ms) }} ms</span>
                     <button v-if="!samActive || current?.id !== item.id" type="button" data-testid="point-sam-accept" :disabled="!item.category" @click="accept([item])">确认并保存</button><button type="button" data-testid="point-sam-reject" @click="remove([item])">拒绝</button>
                 </div>
             </div>
@@ -39,16 +39,18 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
-import { MathUtils } from 'three';
+import { MathUtils, type Event as ThreeEvent } from 'three';
 import { Event as EditorEvent, StatusType } from 'pc-editor';
 import { useInjectEditor } from '../../state';
 import { captureSelected } from '../../common/trialAnnotations';
 import { acceptCandidates, checkedShape, pickVertex, preview, scanCloud, segment } from '../../common/trialCandidates';
 import type { Candidate, Prompt } from '../../common/trialCandidates';
 import { trackNext } from '../../common/trialTracking';
+import { cameraPedestrian } from '../../common/trialPedestrian';
+import { scans } from '../../common/trialScene';
 
 const props = defineProps<{ blocking: boolean; active: boolean; reviewing: boolean }>();
-const emit = defineEmits<{ (event: 'update:active', value: boolean): void }>();
+const emit = defineEmits<{ (event: 'update:active', value: boolean): void; (event: 'open-review'): void }>();
 const editor = useInjectEditor();
 const fields = ['center', 'size'] as const;
 const samActive = computed(() => props.active), busy = ref(false), reach = ref(1), message = ref('');
@@ -62,6 +64,33 @@ let request: AbortController | undefined, dispose: (() => void) | undefined, ali
 const frameReady = ref(0);
 function ready() { frameReady.value++; }
 function resetDraft() { draft.value = ''; prompts.value = []; picking.value = '+'; selected.value = ''; message.value = ''; }
+function armCamera(event: ThreeEvent) {
+    if (blocked.value) { editor.showMsg('warning', '请等待当前操作完成后再框选'); return; }
+    marked.value = marked.value.filter(id => id !== selected.value);
+    resetDraft();
+    emit('update:active', false);
+    event.data();
+}
+function addCameraCandidate(event: ThreeEvent) {
+    const { scanId: source, imgIndex, imgUrl, rect }: {
+        scanId: string; imgIndex: number; imgUrl: string; rect: Parameters<typeof cameraPedestrian>[2];
+    } = event.data;
+    if (source !== scanId.value || editor.state.imgViews[imgIndex]?.imgUrl !== imgUrl) return;
+    const camera = scans.find(scan => scan.id === source)?.views.find(view => view.imgUrl === imgUrl);
+    if (!camera) return;
+    emit('open-review');
+    if (blocked.value) { message.value = '当前操作尚未完成，请稍后重新框选'; return; }
+    try {
+        const category = editor.state.classTypes.find(item => item.name.toLowerCase() === 'pedestrian');
+        if (!category) throw new Error('当前场景未配置 Pedestrian 类别');
+        const result = cameraPedestrian(scanCloud(editor).geometry.getAttribute('position'), camera, rect);
+        if (!result.indices.length) throw new Error('选区内没有足够的行人点，请重新框选');
+        const item = { ...checkedShape(result), indices: result.indices, id: MathUtils.generateUUID(), scanId: source,
+            category: category.id, trackId: editor.createTrackId(), trackName: editor.getId(), cameraGuided: true };
+        queue.value = [item, ...queue.value]; selected.value = item.id;
+        message.value = `待审行人 · ${category.name} · ${item.indices.length} 点`;
+    } catch (error) { report(error); }
+}
 function changeCategory(event: Event) {
     const select = event.target as HTMLSelectElement;
     queue.value = queue.value.map(item => item === current.value ? { ...item, category: select.value } : item);
@@ -119,12 +148,16 @@ onMounted(() => {
     window.addEventListener('keydown', shortcut, true);
     events.forEach(name => window.addEventListener(name, intercept as EventListener, true));
     editor.addEventListener(EditorEvent.FRAME_CHANGE, ready);
+    editor.addEventListener('trial-camera-pedestrian-arm', armCamera);
+    editor.addEventListener('trial-camera-pedestrian-rect', addCameraCandidate);
 });
 onBeforeUnmount(() => {
     alive = false; request?.abort(); dispose?.();
     window.removeEventListener('keydown', shortcut, true);
     events.forEach(name => window.removeEventListener(name, intercept as EventListener, true));
     editor.removeEventListener(EditorEvent.FRAME_CHANGE, ready);
+    editor.removeEventListener('trial-camera-pedestrian-arm', armCamera);
+    editor.removeEventListener('trial-camera-pedestrian-rect', addCameraCandidate);
 });
 function report(error: unknown) { message.value = error instanceof Error ? error.message : String(error); }
 async function run(action: () => Promise<void>) {
@@ -219,6 +252,7 @@ function propagate() { return run(async () => {
 fieldset { margin: 0; padding: 0; min-width: 0; border: 0; }
 .candidate-list { max-height: 30vh; overflow-y: auto; }
 .candidate-row { border-bottom: 1px solid #41434b; padding: 4px 0; }
+.candidate-row.selected { box-shadow: inset 3px 0 #76e8bb; padding-left: 7px; }
 .sam-tools details { flex-basis: 100%; }
 summary { cursor: pointer; padding: 3px 0; }
 input[type=number] { width: 4em; }

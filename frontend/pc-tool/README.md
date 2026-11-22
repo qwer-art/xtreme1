@@ -50,7 +50,9 @@ Choose a camera thumbnail to change the main image; double-click the image for a
 2. **看投影。** 在主相机图上对准目标滚轮缩放，放大后拖动平移；触屏可点 `+`、`−`，点复位恢复全图。缩略图保持全景，相机投影跟随主图一起缩放。
 3. **调框。** 选中心轴、尺寸或航向，用 `+`、`−` 微调，错框点「拒绝」。其余默认保留，点「确认本帧」统一保存。正式框用正交视图手柄拖动，`Ctrl+Z` 撤销。
 
-Camera images show the visible LiDAR boxes using each camera's calibration. Compare a box against the object in the main image, the six desktop thumbnails or the enlarged view. Adjusting a box updates the outline; hiding a candidate category removes its outlines in both views. Unpaired scans have no image to project onto. Selecting a CenterPoint candidate displays its frame index and track ID on the active camera; the overhead, side and rear views focus the same box and highlight its points.
+主图和展开图显示当前帧的点云和框；六张缩略图只用来选相机。点云按相机光轴深度分色，不代表类别：红 <3 m、金 3–4 m、青绿 4–6 m、蓝 6–10 m、紫 10–20 m、灰 ≥20 m。换帧不换色标。点主图右下角「点云投影」可隐藏点和图例，保留框线。
+
+同一小片像素保留近表面；扫描线间隙仅在两侧有相近的前景深度时过滤远点。缺少前景回波处仍可能看到背景点。候选框和轨迹编号始终作为标注线索叠在图上；无配对图像的扫描不显示相机投影。
 
 Use 字号 next to the scene name to set the toolbar text to 18, 24 (default), 30 or 36 px. This browser remembers the setting without changing scene zoom.
 
@@ -111,7 +113,9 @@ Rebuild the offline proposals from the original LiDAR scans (not needed for norm
 cd /home/jerett/catkin_ws/src/xtreme1/frontend/pc-tool && env -u PYTHONPATH PYTHONDONTWRITEBYTECODE=1 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 ~/anaconda3/envs/point_pillar/bin/python scripts/build-centerpoint.py --build
 ```
 
-漏检时按 `P` 开关 Point-SAM，按 `Q` 点目标前景生成候选；误选时按 `E` 补背景点。为每个候选选择类别后点「确认并保存」，错框点「拒绝」。Point-SAM 使用本机 3211 端口，独立于 CenterPoint。
+**图里看得清的漏检行人：** 在主相机图点「图上框行人」，拖框贴住这一个人。系统用框内雷达回波估计深度和三维框；对照图上的绿色投影和点云，满意再点「确认并保存」。回波不足时换机位或手工建框。这个工具拟合直立行人，不估计朝向。
+
+其他漏检可按 `P` 开关 Point-SAM，按 `Q` 点目标前景生成候选；误选时按 `E` 补背景点。为每个候选选择类别后点「确认并保存」，错框点「拒绝」。Point-SAM 使用本机 3211 端口，独立于 CenterPoint。
 For manual annotation, select Car, Pedestrian or Cyclist in Instances.
 Choose the manual or AI Box method in the header, then press **F**. In manual mode,
 click three footprint corners; in AI Box mode, drag a rectangle around one target

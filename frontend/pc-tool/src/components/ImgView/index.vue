@@ -7,7 +7,7 @@
                     <template v-for="slot in cameraSlots" :key="slot.name">
                         <Image2D v-if="slot.index >= 0" v-show="slot.name === activeCamera.name"
                             :key="state.imgViews[slot.index].imgUrl" :img-index="slot.index"
-                            :thumbnail="() => thumbnails.get(slot.name)" />
+                            :primary="slot.name === activeCamera.name" />
                     </template>
                     <span class="camera-name">{{ activeCamera.name }}</span>
                     <div v-if="activeCamera.index < 0" class="camera-unavailable">本帧图像缺失</div>
@@ -18,8 +18,7 @@
                         :aria-label="slot.name + (slot.index < 0 ? ' 图像缺失' : '')"
                         :title="slot.name" @click="selectedCamera = slot.name">
                         <img v-if="slot.index >= 0" :key="state.imgViews[slot.index].imgUrl"
-                            :ref="element => setThumbnail(slot.name, element)"
-                            :src="state.imgViews[slot.index].imgObject.src" alt="" draggable="false" @load="renderProxy.render()" />
+                            :src="state.imgViews[slot.index].imgObject.src" alt="" draggable="false" />
                         <span>{{ slot.label }}<small v-if="slot.index < 0">缺图</small></span>
                     </button>
                 </div>
@@ -48,11 +47,6 @@
     const labels = new Map([['CAM_FRONT_LEFT', '左前'], ['CAM_FRONT', '正前'], ['CAM_FRONT_RIGHT', '右前'],
         ['CAM_BACK_LEFT', '左后'], ['CAM_BACK', '正后'], ['CAM_BACK_RIGHT', '右后']]);
     const selectedCamera = ref('');
-    const thumbnails = new Map<string, HTMLImageElement>();
-    function setThumbnail(name: string, element: unknown) {
-        if (element instanceof HTMLImageElement) thumbnails.set(name, element);
-        else thumbnails.delete(name);
-    }
     const cameraSlots = computed(() => [...Array.from(labels.keys()).filter(name => cameraChannels.value.includes(name)),
         ...cameraChannels.value.filter(name => !labels.has(name))].map(name => ({ name, label: labels.get(name) || name,
         index: state.imgViews.findIndex(view => view.name === name && isTrialFrameImage(state.frames[state.frameIndex]?.id, view.imgUrl)),

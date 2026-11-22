@@ -89,7 +89,7 @@ export default class Image2DRenderView extends Render {
     renderRect: boolean = true;
     renderBox2D: boolean = true;
     renderPreviewBoxes?: () => void;
-    renderThumbnail?: () => void;
+    renderImageOverlay?: () => void;
     // render config
     lineWidth: number = 1;
 
@@ -463,7 +463,6 @@ export default class Image2DRenderView extends Render {
 
     renderFrame() {
         // console.log('renderFrame');
-        this.renderThumbnail?.();
         if (!this.isViewRenderable()) return;
 
         this.dispatchEvent({ type: Event.RENDER_BEFORE });
@@ -480,12 +479,12 @@ export default class Image2DRenderView extends Render {
     }
 
     renderObjects() {
-        if (!this.renderBox) return;
+        if (!this.renderBox) { this.renderPreviewBoxes?.(); return; }
 
         let { groupPoints, selection, selectColor } = this.pointCloud;
         let { renderer } = this.proxy;
         let object3Ds = this.get3DObject();
-        const selected = this.renderPoints && object3Ds.find(box => box.visible && selection.includes(box));
+        const selected = !this.renderImageOverlay && this.renderPoints && object3Ds.find(box => box.visible && selection.includes(box));
         const groupPoint = groupPoints?.children[0] as THREE.Points;
 
         if (selected && groupPoint) {
@@ -544,6 +543,7 @@ export default class Image2DRenderView extends Render {
 
         this.setContextTransform();
         context.drawImage(this.img, 0, 0, imgSize.x, imgSize.y);
+        this.renderImageOverlay?.();
     }
 
     renderBoxData(box: Box) {

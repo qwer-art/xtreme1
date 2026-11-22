@@ -14,6 +14,7 @@
             <div class="render" ref="dom"></div>
         </div>
         <div v-if="!frameImageReady" class="camera-wait">等待当前帧图像</div>
+        <TrialDepthLegend v-if="localTrial && frameImageReady && state.config.renderProjectPoint" />
         <div v-if="localTrial" v-show="canOperate() && frameImageReady"><ChangeRefVue /></div>
         <ChangeRefVue v-else v-show="canOperate()" />
         <div class="info" v-show="canOperate() && frameImageReady">
@@ -74,6 +75,8 @@
     import { localTrial } from '../../common/localTrial';
     import { isTrialFrameImage } from './trialFrameImage';
     import { attachTrialProjection } from './trialProjection';
+    import { attachTrialLidar } from './trialLidarOverlay';
+    import TrialDepthLegend from './TrialDepthLegend.vue';
 
     // ***************Props and Emits***************
 
@@ -116,7 +119,10 @@
                 name: state.config.singleViewPrefix,
                 actions: ['select', 'render-2d-shape', 'create-obj', 'edit-2d', 'transform-2d', 'render-2d-track'],
             });
-            if (localTrial) attachTrialProjection(view);
+            if (localTrial) {
+                attachTrialProjection(view);
+                attachTrialLidar(view, editor, () => state.config.showSingleImgView && frameImageReady.value);
+            }
             pc.addRenderView(view);
             // view.lineWidth = 2;
             view.toggle(false);
