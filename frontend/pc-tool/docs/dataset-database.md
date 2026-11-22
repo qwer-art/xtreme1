@@ -98,6 +98,21 @@ XTREME1_SCENE_ID=scene-0103 node scripts/generate-local-scene.cjs --ensure "$HOM
 
 **人工结果：** 工作稿和确认版均为 `version: 3`。`frames[].scan_id` 对应索引 `id`，`timestamp_us` 与索引一致。`bbox_id` 在场景内唯一；`track_id` 跨帧标识同一物体，同帧只出现一次。框含 `class_id`、中心、长宽高（米）、XYZ 欧拉角（弧度）。`geometry.coordinate_frame` 取实际雷达名，例如 `roof_lidar (current scan)`。
 
+**框身份与速度：** 每个框在保存、导出、归档时自动补全以下派生字段；旧 v3 文件无需手工迁移，导入时按当前几何和位姿重算。
+
+| 字段 | 含义 |
+| --- | --- |
+| `idx` | 当前帧 `boxes[]` 的 1-based 序号，增删后重排，不作跨帧关联键。 |
+| `track_id` / `class_id` | 跨帧目标 ID / 语义类别；`bbox_id` 保持本框唯一身份。 |
+| `velocity.status` | `computed`、`insufficient_track`（缺同 ID 第二帧）或 `missing_pose`。 |
+| `velocity.world_xy_mps` | 世界坐标系水平速度 `[vx, vy]`，单位 m/s；缺数据为 `null`。 |
+| `velocity.speed_mps` | 水平速度大小，单位 m/s；缺数据为 `null`，不表示静止。 |
+| `velocity.interval_s` / `reference_scan_id` | 实际时间间隔（秒）与参考扫描 ID；没有参考帧时均为 `null`。 |
+
+取同轨迹最近的人工标注邻帧，等间隔优先前帧。先将中心经 `worldFromLidar` 变换到世界坐标，再求水平位移与时间差之比；端点可用后一帧。它是该时间段的平均速度，不混用模型预测速度。
+
+改框、改轨迹或删除邻帧后重算。核验速度时同步查看 `interval_s`；长间隔平均速度反映的是整段运动。
+
 **本机 HTTP 接口：**
 
 | 操作 | 方法与路径 | 文件行为 |

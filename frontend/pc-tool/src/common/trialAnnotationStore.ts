@@ -1,7 +1,11 @@
 import type { IObjectV2 } from 'pc-editor';
+import { withBoxMetadata } from './trialVelocity';
+import type { BoxVelocity } from './trialVelocity';
 
 type Triple = [number, number, number];
 export interface TrialBox {
+    idx?: number;
+    velocity?: BoxVelocity;
     bbox_id: string;
     track_id: string;
     track_name: string;
@@ -19,7 +23,8 @@ const geometry = {
 export interface TrialFrame { scene_id: string; scan_id: string; timestamp_us: number; boxes: TrialBox[] }
 export interface TrialDocument { version: 3; scene: string; geometry: typeof geometry; frames: TrialFrame[] }
 interface SceneIdentity { sceneId?: string; sourceDataset?: string; coordinateFrame?: string }
-interface Catalog extends ReadonlyMap<string, number> { sceneId: string; cacheId: string; geometry: typeof geometry }
+interface Catalog extends ReadonlyMap<string, number> { sceneId: string; cacheId: string; geometry: typeof geometry;
+    scans: ReadonlyArray<{ id: string; timestamp: number; worldFromLidar?: number[] }> }
 interface NativeFrame {
     dataId: string;
     objects: { frontId: string; classId?: string; classAttributes: IObjectV2 }[];
@@ -60,10 +65,10 @@ export function sceneCacheId(scan?: SceneIdentity) {
     return !scan?.sourceDataset || (scene === legacyScene && scan.sourceDataset === 'nuScenes/v1.0-mini')
         ? scene : `${encodeURIComponent(scan.sourceDataset)}/${encodeURIComponent(scene)}`;
 }
-export function scanCatalog(scans: ReadonlyArray<{ id: string; timestamp: number } & SceneIdentity>): Catalog {
+export function scanCatalog(scans: ReadonlyArray<{ id: string; timestamp: number; worldFromLidar?: number[] } & SceneIdentity>): Catalog {
     if (!scans.length) throw new Error('Trial scan manifest not loaded');
     const catalog = Object.assign(new Map<string, number>(), { sceneId: scans[0].sceneId || defaultScene,
-        cacheId: sceneCacheId(scans[0]), geometry: { ...geometry, coordinate_frame: `${scans[0].coordinateFrame || 'LIDAR_TOP'} (current scan)` } });
+        cacheId: sceneCacheId(scans[0]), scans, geometry: { ...geometry, coordinate_frame: `${scans[0].coordinateFrame || 'LIDAR_TOP'} (current scan)` } });
     if (scans.some(scan => (scan.sceneId || defaultScene) !== catalog.sceneId)) throw new Error('A local annotation document must contain one scene');
     for (const { id, timestamp } of scans) {
         if (!validId(id) || catalog.has(id) || !Number.isSafeInteger(timestamp) || timestamp <= 0)
@@ -97,7 +102,8 @@ export function validateDocument(input: unknown, catalog: Catalog): TrialDocumen
         frames.set(frame.scan_id, { scene_id: catalog.sceneId, scan_id: frame.scan_id, timestamp_us: frame.timestamp_us, boxes });
     }
     if (frames.size !== catalog.size) throw new Error('Missing scans in annotation document');
-    return { version: 3, scene: catalog.sceneId, geometry: { ...catalog.geometry }, frames: Array.from(catalog.keys(), id => frames.get(id)!) };
+    return { version: 3, scene: catalog.sceneId, geometry: { ...catalog.geometry },
+        frames: withBoxMetadata(Array.from(catalog.keys(), id => frames.get(id)!), catalog.scans) };
 }
 
 function packFrame(frame: NativeFrame): Pick<TrialFrame, 'scan_id' | 'boxes'> {

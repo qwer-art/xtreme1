@@ -80,6 +80,15 @@ npm run dev -- --host 127.0.0.1 --port 3200 --strictPort
 
 同台模式的类别列表与主标注台一致；旧页面中的 `BicycleRider` 保存为 `Cyclist`，框几何保持不变。
 
+补标返回后，主视图默认显示框信息；选中栏同步显示完整 ID。标签拥挤时优先保留选中框。
+
+- `idx`：本帧框序号，从 1 开始，增删后重排；唯一框标识仍为 `bbox_id`。
+- `ID`：跨帧轨迹 `track_id`；语义为 `class_id`。在类别面板修改语义，在「轨迹 → 分配轨迹」关联同一目标。
+- 速度：同 ID 最近人工标注帧的世界坐标水平位移除以真实时间差，已补偿自车运动，单位 m/s。
+- 新目标只有一帧时显示「待同 ID 第二帧」。在下一帧补框并分配相同 ID 后自动计算；没有速度时保存 `null`，不填 0。
+
+保存、导出和归档均写入 `idx` 与 `velocity`；拖框、改 ID、删除邻帧会重算，字段见[数据接口](./docs/dataset-database.md)。
+
 中央点云滚轮已加快：每次滚轮事件拉近约 14%，缩远约 17%。核验单个目标时，选框后点框旁工具栏的 `focus` 按钮，直接拉近并隐藏周围背景；再次点击恢复原视角。缩放与聚焦只改变观察，不改框几何。
 
 保存位置统一为场景库 `annotations/working/scene-0061.json`，沿用历史记录与「文件 → 导出 JSON / 归档已确认版本」。仅新增、修改的框进入正式工作稿，删除的候选记为拒绝；未改预标注仍待审核。PubTracker ID 保留，新目标 Track ID 为 `sustech-<数字>`。
@@ -95,6 +104,8 @@ npm run dev -- --host 127.0.0.1 --port 3200 --strictPort
 ```bash
 node scripts/test-sustechpoints-merge.cjs
 node scripts/test-sustechpoints-workbench.cjs
+node scripts/test-trial-velocity.cjs
+node scripts/test-trial-box-metadata.cjs
 ```
 
 ### 场景数据验收

@@ -21,7 +21,8 @@ async function run() {
         './create': create, './common': {}, './classType': {} });
     const CmdBase = load('packages/pc-editor/common/CmdManager/CmdBase');
     const Add = load('packages/pc-editor/common/CmdManager/cmd/AddObject', { '../CmdBase': CmdBase }).default;
-    const store = load('common/trialAnnotationStore');
+    const velocity = load('common/trialVelocity');
+    const store = load('common/trialAnnotationStore', { './trialVelocity': velocity });
     const sourceRoot = path.join(require('node:os').homedir(), 'datasets/perception/xtreme1/nuscenes-v1.0-mini/scene-0061/source');
     const manifest = require(path.join(sourceRoot, 'index.json'));
     const poses = require(path.join(sourceRoot, 'param/pose.json')).frames;
@@ -30,7 +31,7 @@ async function run() {
     scans[0].worldFromLidar = new THREE.Matrix4().makeRotationZ(Math.PI / 2).setPosition(10, 0, 0).toArray();
     scans[1].worldFromLidar = new THREE.Matrix4().makeTranslation(2, 0, 0).toArray();
     const api = load('common/trialAnnotations', { 'pc-editor': { ...editorTypes, utils: result },
-        'pc-render': { Box }, './trialScene': { scans }, './trialAnnotationStore': store });
+        'pc-render': { Box }, './trialScene': { scans }, './trialAnnotationStore': store, './trialVelocity': velocity });
     const saved = new Map();
     global.localStorage = { getItem: key => saved.get(key) ?? null, setItem: (key, val) => saved.set(key, val) };
     global.fetch = async () => new Response(JSON.stringify({ saved: true }), { status: 200 });

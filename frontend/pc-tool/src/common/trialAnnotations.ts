@@ -5,6 +5,7 @@ import type Editor from './Editor';
 import { scans } from './trialScene';
 import { archiveTrialDatabase, loadDocument, persistTrialDatabase, replaceDocument, saveFrames, scanCatalog, validId, validateDocument } from './trialAnnotationStore';
 import type { TrialBox, TrialDocument } from './trialAnnotationStore';
+import { withBoxMetadata } from './trialVelocity';
 
 const vector = (coords: [number, number, number]) => new Vector3(...coords);
 
@@ -51,13 +52,28 @@ function selected(editor: Editor) {
 }
 
 export interface TrialSnapshot { scan_id: string; box: TrialBox }
+function describeBox(object: Box): TrialBox {
+    const { trackId, trackName, classId } = object.userData;
+    return { bbox_id: object.uuid, track_id: trackId, track_name: trackName, class_id: classId || '',
+        center: [object.position.x, object.position.y, object.position.z],
+        size: [object.scale.x, object.scale.y, object.scale.z], rotation: [object.rotation.x, object.rotation.y, object.rotation.z] };
+}
+
+export function currentFrameMetadata(editor: Editor): TrialBox[] {
+    const currentId = editor.getCurrentFrame()?.id;
+    if (!currentId || !scans.length) return [];
+    const frames = loadDocument(scanCatalog(scans)).frames.map(frame => {
+        const objects = editor.dataManager.dataMap.get(frame.scan_id);
+        return objects ? { ...frame, boxes: objects.filter((object): object is Box => object instanceof Box).map(describeBox) } : frame;
+    });
+    return withBoxMetadata(frames, scans).find(frame => frame.scan_id === currentId)?.boxes || [];
+}
+
 export function captureSelected(editor: Editor): TrialSnapshot | null {
     const object = selected(editor);
     if (!object) return null;
-    const { trackId, trackName, classId } = object.userData;
-    return { scan_id: editor.getCurrentFrame().id, box: { bbox_id: object.uuid, track_id: trackId,
-        track_name: trackName, class_id: classId || '', center: [object.position.x, object.position.y, object.position.z],
-        size: [object.scale.x, object.scale.y, object.scale.z], rotation: [object.rotation.x, object.rotation.y, object.rotation.z] } };
+    return { scan_id: editor.getCurrentFrame().id,
+        box: currentFrameMetadata(editor).find(box => box.bbox_id === object.uuid) || describeBox(object) };
 }
 
 function requireFreeTrack(editor: Editor, trackId: string, except?: Box) {

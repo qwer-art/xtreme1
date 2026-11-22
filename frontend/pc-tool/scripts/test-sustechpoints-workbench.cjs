@@ -207,6 +207,21 @@ async function run() {
             return box && { position: box.position.toArray(), scale: box.scale.toArray() };
         }, added.obj_id), { position: Object.values(added.psr.position), scale: Object.values(added.psr.scale) });
         console.log(`PASS embedded Ctrl-drag adds new target ${added.obj_id}, saved into current workbench`);
+        const savedBox = JSON.parse(fs.readFileSync(workingPath, 'utf8')).frames
+            .find(frame => frame.scan_id === currentScan.id).boxes.find(box => box.track_id === `sustech-${added.obj_id}`);
+        assert.ok(Number.isInteger(savedBox.idx) && savedBox.idx > 0);
+        assert.equal(savedBox.class_id, added.obj_type);
+        assert.equal(savedBox.velocity.status, 'insufficient_track');
+        assert.equal(savedBox.velocity.speed_mps, null);
+        await page.evaluate(id => {
+            const box = editor.dataManager.getFrameObject(editor.getCurrentFrame().id).find(box => box.userData.trackId === `sustech-${id}`);
+            editor.pc.selectObject(box); editor.pc.render();
+        }, added.obj_id);
+        await page.locator(`[data-box-id="${savedBox.bbox_id}"]`).waitFor();
+        const label = await page.locator(`[data-box-id="${savedBox.bbox_id}"]`).innerText();
+        assert.ok(label.includes(`idx ${savedBox.idx}`) && label.includes(`ID ${savedBox.track_id}`) &&
+            label.includes(`语义 ${savedBox.class_id}`) && label.includes('待同 ID 第二帧'));
+        console.log('PASS SUSTechPOINTS return shows and saves idx, track ID, semantics and explicit missing velocity');
         await page.screenshot({ path: path.join(temporary, 'workbench.png') });
         assert.equal(page.context().pages().length, 1);
         assert.ok(!requests.some(url => url.includes(':3202/')));
