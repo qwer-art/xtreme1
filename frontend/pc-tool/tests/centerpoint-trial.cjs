@@ -161,11 +161,9 @@ async function browserRun(data) {
             `BEV screenshot lacks edges/returns: hits=${captured.hits}; cloudPixels=${captured.cloudPixels}`);
         console.log(`BEV image: scan=${scan.id}, candidate=${target.id}, focused hits(out of 12)=${captured.hits}, cloudPixels=${captured.cloudPixels}`);
 
-        console.log('2/4: accept, edit then accept, reject');
+        console.log('2/4: edit and reject exceptions, confirm the frame');
         const otherBoxes = (data.predictions.frames[other.id] || []).filter(reviewable);
         const original = boxes.find(box => otherBoxes.some(item => item.trackId === box.trackId)) || boxes[0];
-        await (await row(original)).getByTestId('centerpoint-accept').click();
-        await checkFrame(scan, boxes.filter(box => box !== original), [original]);
         const cameraVisible = await page.evaluate(() => {
             const group = window.editor.pc.scene.getObjectByName('centerpoint-preview');
             const views = window.editor.pc.renderViews.filter(view => view.name.startsWith('image-2d-small-'));
@@ -183,7 +181,6 @@ async function browserRun(data) {
         assert.ok(toEdit, 'no remaining candidate projects into a camera image');
         const toReject = choices.find(box => box !== toEdit);
         assert.ok(toReject, 'need another candidate to reject');
-        const pending = boxes.filter(box => ![original, toEdit, toReject].includes(box));
         await (await row(toEdit)).getByTestId('centerpoint-select').click();
         const linked = await eventually('selected candidate linked to camera and orthogonal views', async () => {
             const state = await page.evaluate(inspectScene);
@@ -236,24 +233,24 @@ async function browserRun(data) {
             const field = test('centerpoint-adjust').getByLabel(label, { exact: true });
             await field.fill(String(value)); await field.press('Tab');
         }
-        await checkFrame(scan, boxes.filter(box => box !== original).map(box => box === toEdit ? edited : box), [original]);
-        await (await row(toEdit)).getByTestId('centerpoint-accept').click();
-        const accepted = [original, edited];
-        await checkFrame(scan, [...pending, toReject], accepted);
+        const adjusted = boxes.map(box => box === toEdit ? edited : box);
+        await checkFrame(scan, adjusted, []);
+        const accepted = adjusted.filter(box => box !== toReject);
         await (await row(toReject)).getByTestId('centerpoint-reject').click();
-        await checkFrame(scan, pending, accepted);
+        await checkFrame(scan, accepted, []);
+        await test('centerpoint-confirm').click();
+        await checkFrame(scan, [], accepted);
 
         console.log('3/4: different scan, shared track when available, return to edited frame');
         await go(other); await checkFrame(other, otherBoxes, []);
         const shared = otherBoxes.find(box => box.trackId === original.trackId);
-        if (shared) await (await row(shared)).getByTestId('centerpoint-accept').click();
-        const otherAccepted = shared ? [shared] : [], otherPending = otherBoxes.filter(box => box !== shared);
-        await checkFrame(other, otherPending, otherAccepted);
-        await go(scan); await checkFrame(scan, pending, accepted);
+        if (otherBoxes.length) await test('centerpoint-confirm').click();
+        await checkFrame(other, [], otherBoxes);
+        await go(scan); await checkFrame(scan, [], accepted);
         console.log('4/4: reload, verify complete formal and pending sets on both scans');
         await page.reload({ waitUntil: 'domcontentloaded' });
-        await go(scan); await checkFrame(scan, pending, accepted);
-        await go(other); await checkFrame(other, otherPending, otherAccepted);
+        await go(scan); await checkFrame(scan, [], accepted);
+        await go(other); await checkFrame(other, [], otherBoxes);
         await page.getByRole('button', { name: '文件' }).click();
         await test('trial-archive').click();
         const archiveStatus = await eventually('confirmed annotations archived to database', async () => {

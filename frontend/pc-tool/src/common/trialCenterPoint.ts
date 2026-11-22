@@ -5,7 +5,7 @@ import { scans } from './trialScene';
 
 const url = '/trial-data/centerpoint';
 const sceneId = () => scans[0]?.sceneId || 'scene-0061';
-export interface CenterPointCandidate extends Candidate { sourceId: string; score: number; accepting?: boolean }
+export interface CenterPointCandidate extends Candidate { sourceId: string; score: number; velocityWorldXY?: [number, number]; accepting?: boolean }
 export type CenterPointFrames = Record<string, unknown>;
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -43,17 +43,21 @@ export function centerPointFrame(frames: CenterPointFrames, scanId: string): Cen
         const trackId = typeof row.trackId === 'string' ? row.trackId : `single:${scanId}:${row.id}`;
         return { id: `centerpoint:${scanId}:${row.id}`, sourceId: row.id, scanId, trackId,
             trackName: row.trackId === null ? '未跟踪' : trackId, category: row.category, score: row.score, center: [...row.center],
-            size: [...row.size], yaw: row.yaw, elapsed_ms: 0, indices: [] };
+            size: [...row.size], yaw: row.yaw, elapsed_ms: 0, indices: [],
+            velocityWorldXY: Array.isArray(row.velocityWorldXY) && row.velocityWorldXY.length === 2 && row.velocityWorldXY.every(Number.isFinite)
+                ? [row.velocityWorldXY[0], row.velocityWorldXY[1]] : undefined };
     });
 }
 
 type Decision = 'adjusted' | 'accepting' | 'accepted' | 'rejected';
 function reviewKey(item: CenterPointCandidate) { return `xtreme1:local-trial:review:v1:${sceneCacheId(scans[0])}:${item.id}`; }
 
-export function writeReview(item: CenterPointCandidate, decision: Decision): Promise<void> {
-    const { center, size, yaw, trackId, score, category } = item;
-    localStorage.setItem(reviewKey(item), JSON.stringify({ decision, center, size, yaw, trackId, score,
-        category, reviewedAt: new Date().toISOString() }));
+export function writeReview(target: CenterPointCandidate | readonly CenterPointCandidate[], decision: Decision): Promise<void> {
+    const reviewedAt = new Date().toISOString();
+    for (const item of Array.isArray(target) ? target : [target]) {
+        const { center, size, yaw, trackId, score, category } = item;
+        localStorage.setItem(reviewKey(item), JSON.stringify({ decision, center, size, yaw, trackId, score, category, reviewedAt }));
+    }
     return persistReviewDatabase(sceneCacheId(scans[0]));
 }
 

@@ -20,6 +20,7 @@
         <div class="trial-frame-status" aria-label="当前帧状态">
             <time v-if="scan" title="扫描时间戳（微秒）"><ClockCircleOutlined aria-hidden="true" /> {{ scan.timestamp }} µs</time>
             <output :title="selection ? `框 ${selection.box.bbox_id} · 轨迹 ${selection.box.track_id}` : ''">{{ selection ? '已选框' : '未选框' }}</output>
+            <TrialSpeed v-if="selection && selection.scan_id === id" :scan-id="id" :center="selection.box.center" :world-x-y="velocity" :interval="interval" source="轨迹" unavailable="待同 ID 第二帧" />
         </div>
         </div>
         <div v-show="panel === 'overlay'" id="trial-options-overlay" class="trial-options" role="group" aria-label="邻帧显示">
@@ -63,6 +64,9 @@ import { hasPairedFrames, scans, setSceneFilter } from '../../common/trialScene'
 import { setTrialOverlay } from '../../common/trialOverlay';
 import { archiveLocalAnnotations, assignTrack, captureSelected, copySelected, exportAnnotations, getSelectedGeometry, importAnnotations, listTracks, updateSelectedGeometry } from '../../common/trialAnnotations';
 import type { TrialSnapshot } from '../../common/trialAnnotations';
+import { loadDocument, scanCatalog } from '../../common/trialAnnotationStore';
+import { trackVelocity } from '../../common/trialVelocity';
+import TrialSpeed from './TrialSpeed.vue';
 
 const props = defineProps<{ blocking: boolean }>();
 const panels = [
@@ -89,6 +93,23 @@ const radius = ref(1);
 const track = ref('');
 const tracks = ref<string[]>([]);
 const selection = shallowRef<TrialSnapshot | null>(null);
+const trackId = computed(() => selection.value?.box.track_id);
+const neighbor = computed(() => {
+    const current = scan.value, track = trackId.value;
+    if (!current || !track) return;
+    const frames = loadDocument(scanCatalog(scans)).frames;
+    let best: { frame: typeof current; center: [number, number, number]; seconds: number } | undefined;
+    for (const [index, record] of frames.entries()) {
+        const seconds = Math.abs(record.timestamp_us - current.timestamp) / 1e6;
+        if (!seconds || (best && seconds >= best.seconds)) continue;
+        const box = record.boxes.find(box => box.track_id === track);
+        if (box) best = { frame: scans[index], center: box.center, seconds };
+    }
+    return best;
+});
+const interval = computed(() => neighbor.value?.seconds);
+const velocity = computed(() => scan.value && selection.value && neighbor.value
+    ? trackVelocity(scan.value, selection.value.box.center, neighbor.value.frame, neighbor.value.center) : undefined);
 const departed = shallowRef<TrialSnapshot | null>(null);
 const error = ref('');
 const archiveStatus = ref('');
@@ -203,11 +224,15 @@ watch(id, refreshSelection);
 onMounted(() => {
     window.addEventListener('keydown', arrows, true);
     editor.addEventListener(Event.ANNOTATE_SELECT, refreshSelection);
+    editor.addEventListener(Event.ANNOTATE_TRANSFORM_CHANGE, refreshSelection);
+    editor.addEventListener(Event.ANNOTATE_CHANGE, refreshSelection);
     refreshSelection();
 });
 onBeforeUnmount(() => {
     window.removeEventListener('keydown', arrows, true);
     editor.removeEventListener(Event.ANNOTATE_SELECT, refreshSelection);
+    editor.removeEventListener(Event.ANNOTATE_TRANSFORM_CHANGE, refreshSelection);
+    editor.removeEventListener(Event.ANNOTATE_CHANGE, refreshSelection);
     void setTrialOverlay(editor, scans, '', 0).catch(report);
 });
 </script>

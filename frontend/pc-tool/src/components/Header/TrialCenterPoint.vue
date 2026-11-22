@@ -6,7 +6,8 @@
         <fieldset v-if="result.available" :disabled="blocked">
             <div class="cp-filter" aria-label="候选置信度筛选">
                 <label>置信度 ≥ <input data-testid="centerpoint-threshold" type="number" min="0" max="1" step="0.05" v-model.number="threshold" /></label>
-                <small class="cp-legend"># 帧内序号 · ID 跟踪编号 · 最后值置信度</small>
+                <button type="button" data-testid="centerpoint-confirm" :disabled="!toConfirm.length" title="保存本帧未隐藏、达到阈值的剩余候选" @click="confirmFrame">确认本帧 ({{ toConfirm.length }})</button>
+                <small class="cp-legend"># 序号 · ID 轨迹 · 置信度</small>
             </div>
             <div class="cp-list" aria-label="本帧 CenterPoint 候选">
                 <section v-for="group in groups" :key="group.category" class="cp-group" :data-category="group.category">
@@ -23,21 +24,22 @@
                     <span v-if="!group.items.length" class="cp-empty">暂无待审对象</span>
                     <fieldset v-for="item in group.items" :key="item.id" class="cp-row" :class="{ selected: item.id === selected }" :data-candidate-id="item.sourceId" :disabled="hidden.has(group.category)">
                     <button type="button" data-testid="centerpoint-select" :aria-pressed="item.id === selected"
-                        :title="`框 ${item.sourceId} · 轨迹 ${item.trackName}`" @click="selected = item.id">对象 {{ item.number }} · 框 {{ item.sourceId }} · 轨迹 {{ item.trackName }} <span class="cp-score" :aria-label="`置信度 ${item.score.toFixed(2)}`">{{ item.score.toFixed(2) }}</span></button>
-                    <button type="button" data-testid="centerpoint-accept" @click="accept(item)">接受</button>
+                        :title="`框 ${item.sourceId} · 轨迹 ${item.trackName}`" @click="selected = item.id">#{{ item.number }} · {{ item.trackName === '未跟踪' ? item.trackName : `ID ${item.trackName.replace(/^cp-all-(\d+)$/, '$1')}` }} <span class="cp-score" :aria-label="`置信度 ${item.score.toFixed(2)}`">{{ item.score.toFixed(2) }}</span></button>
                     <button type="button" data-testid="centerpoint-reject" :disabled="awaitingSave(item)" @click="reject(item)">拒绝</button>
                     </fieldset>
                     </div>
                 </section>
             </div>
-            <div v-if="current" class="cp-edit" data-testid="centerpoint-adjust">
+            <fieldset v-if="current" class="cp-edit" data-testid="centerpoint-adjust" :disabled="awaitingSave(current)">
+                <TrialSpeed v-if="visible && !blocking && !hidden.has(current.category)" :scan-id="current.scanId" :center="current.center" :world-x-y="current.velocityWorldXY" source="模型" unavailable="未提供" />
+                <TrialBoxNudge :can-undo="!!adjustments.length" @nudge="nudge" @undo="undoAdjustment" />
                 <label v-for="field in fields" :key="field">{{ field === 'center' ? '中心 XYZ (m)' : '长宽高 (m)' }}
                     <input v-for="(value, axis) in current[field]" :key="axis" type="number" step="0.1" :value="value"
                         :disabled="awaitingSave(current)" :aria-label="`${field}-${axis}`" @change="adjust($event, field, axis)" />
                 </label>
                 <label>偏航 (rad) <input type="number" step="0.05" :value="current.yaw" :disabled="awaitingSave(current)"
                     aria-label="yaw" @change="adjust($event, 'yaw')" /></label>
-            </div>
+            </fieldset>
         </fieldset>
         <output v-if="message" role="status">{{ message }}</output>
     </div>
@@ -56,6 +58,8 @@ import { centerPointPreview } from '../../common/trialCenterPointPreview';
 import { loadDocument, scanCatalog } from '../../common/trialAnnotationStore';
 import { scans } from '../../common/trialScene';
 import { detectionColors } from '../../common/trialDetectionColors';
+import TrialBoxNudge from './TrialBoxNudge.vue';
+import TrialSpeed from './TrialSpeed.vue';
 
 const props = defineProps<{ blocking: boolean; visible: boolean; interactive: boolean; refreshKey: string }>();
 const editor = useInjectEditor();
@@ -93,6 +97,7 @@ const result = computed(() => {
     } catch (error) { return { items: [], status: errorText(error) }; }
 });
 const items = computed(() => result.value.items), status = computed(() => result.value.status);
+const toConfirm = computed(() => items.value.filter(item => !hidden.value.has(item.category)));
 const groups = computed(() => Array.from(reviewCategories, category => ({ category, items: items.value.filter(item => item.category === category) })));
 const current = computed(() => items.value.find(item => item.id === selected.value));
 let overlay: ReturnType<typeof centerPointPreview> | undefined, alive = true;
@@ -149,17 +154,45 @@ onBeforeUnmount(() => {
     alive = false; overlay?.dispose(); editor.removeEventListener(EditorEvent.FRAME_CHANGE, ready);
     window.removeEventListener('pointerdown', pointer, true); window.removeEventListener('click', pointer, true);
 });
-function adjust(event: globalThis.Event, field: 'center' | 'size' | 'yaw', axis = 0) {
-    const item = current.value, input = event.target as HTMLInputElement, value = input.valueAsNumber;
-    if (!item || blocked.value) return;
+type GeometryField = 'center' | 'size' | 'yaw';
+const adjustments = ref<{ field: GeometryField; axis: number; value: number }[]>([]);
+function clearAdjustments() { adjustments.value = []; }
+watch(() => current.value?.id, id => {
+    clearAdjustments();
+    if (id && editor.pc.selection.length) editor.pc.selectObject();
+}, { flush: 'sync' });
+watch(frames, clearAdjustments, { flush: 'sync' });
+function selectFormalGeometry() {
+    if (editor.pc.selection.length) selected.value = '';
+}
+onMounted(() => editor.addEventListener(EditorEvent.ANNOTATE_SELECT, selectFormalGeometry));
+onBeforeUnmount(() => editor.removeEventListener(EditorEvent.ANNOTATE_SELECT, selectFormalGeometry));
+const coordinate = (item: CenterPointCandidate, field: GeometryField, axis: number) => field === 'yaw' ? item.yaw : item[field][axis];
+function setCoordinate(field: GeometryField, axis: number, value: number, remember = true) {
+    const item = current.value;
+    if (!item || item.scanId !== scanId.value || blocked.value || awaitingSave(item)) return false;
+    const before = coordinate(item, field, axis);
+    if (value === before) return false;
     const adjusted = { ...item };
     try {
         if (!Number.isFinite(value) || (field === 'size' && value <= 0)) throw new Error('请输入有效几何值，尺寸必须为正');
         if (field === 'yaw') adjusted.yaw = value;
         else { adjusted[field] = [...item[field]]; adjusted[field][axis] = value; }
         void writeReview(adjusted, 'adjusted').catch(error => { message.value = errorText(error); });
-        revision.value++; message.value = '';
-    } catch (error) { input.value = String(field === 'yaw' ? item.yaw : item[field][axis]); message.value = errorText(error); }
+        if (remember) adjustments.value.push({ field, axis, value: before });
+        revision.value++; message.value = ''; return true;
+    } catch (error) { message.value = errorText(error); return false; }
+}
+function nudge(field: GeometryField, axis: number, delta: number) {
+    if (current.value) setCoordinate(field, axis, coordinate(current.value, field, axis) + delta);
+}
+function undoAdjustment() {
+    const last = adjustments.value[adjustments.value.length - 1];
+    if (last && setCoordinate(last.field, last.axis, last.value, false)) adjustments.value.pop();
+}
+function adjust(event: globalThis.Event, field: GeometryField, axis = 0) {
+    const input = event.target as HTMLInputElement;
+    if (!setCoordinate(field, axis, input.valueAsNumber) && current.value) input.value = String(coordinate(current.value, field, axis));
 }
 function reject(item: CenterPointCandidate) {
     if (blocked.value || item.scanId !== scanId.value) return;
@@ -169,21 +202,26 @@ function reject(item: CenterPointCandidate) {
 function awaitingSave(item: CenterPointCandidate) {
     return !!item.accepting && !!editor.dataManager.getFrameObject(item.scanId)?.some(box => box.uuid === item.id);
 }
-async function accept(item: CenterPointCandidate) {
-    if (blocked.value || item.scanId !== scanId.value) return;
+async function confirmFrame() {
+    const batch = toConfirm.value, frame = editor.getCurrentFrame();
+    if (blocked.value || !frame || !batch.length || batch.some(item => item.scanId !== frame.id)) return;
     busy.value = true;
     try {
-        const frame = editor.getCurrentFrame(), formal = editor.dataManager.getFrameObject(item.scanId);
+        const formal = editor.dataManager.getFrameObject(frame.id);
         if (!formal) throw new Error('当前帧正式框尚未加载');
-        if (!awaitingSave(item)) {
-            if (formal.some(box => box.uuid === item.id || box.userData.trackId === item.trackId))
-                throw new Error(`本帧已有轨迹或框 ${item.trackId}，已保留正式框`);
-            await writeReview(item, 'accepting');
-            acceptCandidates(editor, [item]);
+        const additions = batch.filter(item => !awaitingSave(item));
+        const tracks = new Set(formal.map(box => box.userData.trackId));
+        for (const item of additions) {
+            if (tracks.has(item.trackId) || formal.some(box => box.uuid === item.id))
+                throw new Error(`轨迹 ${item.trackId} 重复，请拒绝冲突候选后再确认`);
+            tracks.add(item.trackId);
         }
+        await writeReview(batch, 'accepting');
+        if (editor.getCurrentFrame()?.id !== frame.id) throw new Error('已切帧，请返回原帧确认');
+        acceptCandidates(editor, additions);
         await editor.saveObject([frame]);
-        if (editor.needSave([frame])) throw new Error('正式框尚未保存，请重试接受');
-        await writeReview(item, 'accepted'); message.value = '已接受并保存';
+        if (editor.needSave([frame])) throw new Error('正式框尚未保存，请重试确认');
+        await writeReview(batch, 'accepted'); message.value = `已保存 ${batch.length} 个框`;
     } catch (error) { message.value = errorText(error); }
     finally { revision.value++; busy.value = false; }
 }
@@ -203,7 +241,7 @@ async function accept(item: CenterPointCandidate) {
 .cp-objects { max-height: min(38vh, 25rem); overflow-y: auto; border-left: 2px solid #565962; padding-left: 8px; margin: 3px 0 6px 6px; }
 .cp-empty, .cp-score { color: #cbd2de; }
 .cp-score { float: right; margin-left: 5px; font-variant-numeric: tabular-nums; }
-.cp-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 4px; padding: 3px 0; border-bottom: 1px solid #3e4047; }
+.cp-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px; padding: 3px 0; border-bottom: 1px solid #3e4047; }
 .cp-row button:first-child { text-align: left; overflow-wrap: anywhere; }
 .cp-edit { margin-top: 8px; display: grid; gap: 5px; }
 .cp-edit label { display: grid; grid-template-columns: 6em repeat(3, minmax(0, 1fr)); gap: 3px; align-items: center; }

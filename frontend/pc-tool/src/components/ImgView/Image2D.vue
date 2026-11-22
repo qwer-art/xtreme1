@@ -7,7 +7,15 @@
             aspectRatio: state.config.aspectRatio,
         }"
     >
-        <div class="render" ref="dom"></div>
+        <div class="render" :class="{ 'camera-zoomed': localTrial && zoomScale > 1 }" ref="dom"></div>
+        <div v-if="localTrial" class="camera-zoom" role="group" aria-label="相机图像缩放" @dblclick.stop>
+            <button type="button" aria-label="缩小图像" title="缩小图像" :disabled="zoomScale <= 1"
+                @click.stop="cameraZoom?.zoom(1 / 1.5)"><MinusOutlined /></button>
+            <button type="button" aria-label="放大图像" title="放大图像" :disabled="zoomScale >= maxCameraZoom"
+                @click.stop="cameraZoom?.zoom(1.5)"><PlusOutlined /></button>
+            <button type="button" aria-label="恢复全图" title="恢复全图" :disabled="zoomScale <= 1"
+                @click.stop="cameraZoom?.reset()"><ReloadOutlined /></button>
+        </div>
         <div class="tool">
             <button v-if="localTrial" type="button" class="icon expand-camera" title="放大相机" aria-label="放大相机"
                 @click.stop="onDBClick" @dblclick.stop><FullscreenOutlined /></button>
@@ -25,7 +33,7 @@
 </template>
 
 <script setup lang="ts">
-    import { onMounted, ref, onBeforeUnmount } from 'vue';
+    import { onMounted, ref, shallowRef, onBeforeUnmount } from 'vue';
     import * as THREE from 'three';
     import { Image2DRenderView, PointsMaterial, Rect } from 'pc-render';
     import { useInjectState, useInjectEditor } from '../../state';
@@ -33,10 +41,11 @@
 
     import useUI from '../../hook/useUI';
     import useContextMenu from '../../hook/useContextMenu';
-    import { FullscreenOutlined, EyeOutlined } from '@ant-design/icons-vue';
+    import { FullscreenOutlined, EyeOutlined, MinusOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue';
     import useInjectProxy from './useProxy';
     import { localTrial } from '../../common/localTrial';
     import { attachTrialProjection } from './trialProjection';
+    import { attachTrialCameraZoom, maxCameraZoom } from './trialCameraZoom';
 
     // ***************Props and Emits***************
     interface ImgViewProps {
@@ -59,6 +68,8 @@
     let { canOperate } = useUI();
     let { handleContext, clearContext } = useContextMenu();
     let renderProxy = useInjectProxy();
+    const zoomScale = ref(1);
+    const cameraZoom = shallowRef<ReturnType<typeof attachTrialCameraZoom>>();
 
     onMounted(() => {
         // console.log('img view onMounted');
@@ -70,7 +81,10 @@
                 actions: ['render-2d-shape'],
                 proxy: renderProxy,
             });
-            if (localTrial) attachTrialProjection(view, props.thumbnail);
+            if (localTrial) {
+                attachTrialProjection(view, props.thumbnail);
+                cameraZoom.value = attachTrialCameraZoom(view, scale => { zoomScale.value = scale; });
+            }
             view.renderBox = state.config.projectMap3d && state.config.renderProjectBox;
             view.renderRect = state.config.projectPoint4;
             view.renderBox2D = state.config.projectPoint8;
@@ -87,6 +101,7 @@
     });
 
     onBeforeUnmount(() => {
+        cameraZoom.value?.dispose();
         clearContext();
 
         pc.removeRenderView(view);
@@ -139,6 +154,36 @@
 
         .render {
             height: 100%;
+        }
+
+        .camera-zoomed {
+            cursor: grab;
+            touch-action: none;
+            &:active { cursor: grabbing; }
+        }
+
+        .camera-zoom {
+            position: absolute;
+            z-index: 2;
+            right: 6px;
+            bottom: 6px;
+            display: flex;
+            gap: 2px;
+            button {
+                display: grid;
+                place-items: center;
+                width: 32px;
+                height: 32px;
+                border: 0;
+                border-radius: 4px;
+                background: #26292d;
+                color: white;
+                cursor: pointer;
+                touch-action: manipulation;
+                &:disabled { color: #95999e; cursor: default; }
+                &:focus-visible { outline: 2px solid #69baff; outline-offset: -2px; }
+            }
+            @media (pointer: coarse) { button { width: 44px; height: 44px; } }
         }
 
         .icon {

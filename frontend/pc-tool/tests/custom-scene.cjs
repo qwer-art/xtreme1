@@ -4,6 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { test } = require('node:test');
 const { createServer } = require('vite');
+const { Vector3, Matrix4 } = require('three');
 const { indexScene } = require('../scripts/index-local-scene.cjs');
 
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -60,10 +61,28 @@ test('index and annotate a timestamp scene with a custom camera and reference Li
         assert.deepEqual(document.frames.map(frame => frame.scan_id), [paired, single].map(frame => String(frame.timestamp)));
         document.frames[1].boxes.push({ bbox_id: 'box-1', track_id: 'track-1', track_name: '1', class_id: 'Car',
             center: [1, 2, 0], size: [4, 2, 1], rotation: [0, 0, 0] });
+        const seconds = (single.timestamp - paired.timestamp) / 1e6;
+        const poseMatrix = frame => new Matrix4().fromArray(sourcePoses[frame.timestamp].roof_lidar.worldFromSensor);
+        const nextCenter = new Vector3(4, 2, 0).applyMatrix4(poseMatrix(paired)).add(new Vector3(3 * seconds, 4 * seconds, 0)).applyMatrix4(poseMatrix(single).invert()).toArray();
+        for (const [index, center] of [[0, [4, 2, 0]], [1, nextCenter]]) document.frames[index].boxes.push({ ...document.frames[1].boxes[0],
+            bbox_id: `moving-${index}`, track_id: 'track-2', track_name: '2', center });
         const saved = page.waitForResponse(response => response.url().endsWith('/trial-data/annotations') && response.request().method() === 'PUT');
         await page.getByTestId('trial-import').setInputFiles({ name: 'yard.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(document)) });
         assert.equal((await saved).status(), 200);
         assert.deepEqual(read(path.join(scene, 'annotations/working/yard.json')), document);
+        const selectBox = id => page.evaluate(id => window.editor.pc.selectObject(window.editor.pc.getAnnotate3D().find(box => box.uuid === id)), id);
+        await selectBox('box-1');
+        const speed = page.getByTestId('trial-speed');
+        assert.match(await speed.innerText(), /待同 ID 第二帧/);
+        assert.equal(await page.evaluate(() => !!window.editor.pc.scene.getObjectByName('trial-selected-velocity')), false);
+        await selectBox('moving-1');
+        assert.match(await speed.innerText(), /轨迹速度 5\.00 m\/s/);
+        const end = await page.evaluate(() => {
+            const arrow = window.editor.pc.scene.getObjectByName('trial-selected-velocity');
+            return arrow.cone.getWorldPosition(arrow.position.clone()).sub(arrow.position).toArray();
+        });
+        const direction = new Vector3(...end).transformDirection(poseMatrix(single));
+        assert.ok(Math.abs(Math.hypot(...end) - 5) < 1e-6 && direction.distanceTo(new Vector3(.6, .8, 0)) < 1e-6);
         assert.deepEqual(errors, []);
     } finally {
         await browser?.close();
