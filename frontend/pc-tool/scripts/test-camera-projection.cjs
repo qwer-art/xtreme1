@@ -77,8 +77,17 @@ const cameraView = Object.assign(Object.create(View.prototype), {
     camera: new THREE.PerspectiveCamera(), clipCamera: new THREE.PerspectiveCamera(),
     cameraHelper: { update() {} }, render() {},
 });
-const scan = require('../public/local-scene/index.json').scans.find(scan => scan.viewsUrl);
-const calibrations = require(path.join(__dirname, '../public', scan.viewsUrl));
+const sourceRoot = path.join(require('node:os').homedir(), 'datasets/perception/xtreme1/nuscenes-v1.0-mini/scene-0061/source');
+const manifest = require(path.join(sourceRoot, 'index.json'));
+const poseFrames = require(path.join(sourceRoot, 'param/pose.json')).frames;
+const sensorCalibration = require(path.join(sourceRoot, 'param/calib.json')).cameras;
+const scan = manifest.frames.find(frame => frame.images.length);
+const lidarPose = new THREE.Matrix4().fromArray(poseFrames[String(scan.timestamp)].LIDAR_TOP.worldFromSensor);
+const calibrations = scan.images.map(image => {
+    const sensor = sensorCalibration[image.channel], cameraPose = poseFrames[String(scan.timestamp)][image.channel];
+    const cameraFromLidar = new THREE.Matrix4().fromArray(cameraPose.worldFromSensor).invert().multiply(lidarPose);
+    return { name: image.channel, cameraInternal: sensor.cameraInternal, cameraExternal: cameraFromLidar.transpose().toArray(), imgSize: sensor.imageSize };
+});
 const cuboid = new THREE.Object3D();
 cuboid.scale.set(4.1, 1.9, 1.6); cuboid.rotation.set(.05, -.07, .53);
 let comparisons = 0, maxError = 0;

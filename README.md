@@ -81,6 +81,8 @@ The built-in model containers only can be running on Linux server with [NVIDIA C
 
 ### Download Package
 
+**本地 3D 标注与数据交接：** [标注数据库 README](frontend/pc-tool/docs/dataset-database.md) 说明标注员如何看原始帧、续标和交付确认版，也给出自采数据接口与换机启动步骤。以下 Docker 安装用于完整平台。
+
 **Already running an earlier version?** Read [Upgrading](#upgrading) first. The steps below
 install a fresh copy: followed on their own they start an empty installation beside the one you
 have, and leave its data behind.

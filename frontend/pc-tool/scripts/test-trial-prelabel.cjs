@@ -72,7 +72,7 @@ test('local HTTP contract, single admission, Vite reload and publication', async
     assert.equal(calls.length, 1);
     const { child, file, args, options } = calls[0];
     assert.equal(file, '/usr/bin/flock');
-    assert.deepEqual(args, ['-n', '-E', '75', '-F', `${root}/public/local-scene`,
+    assert.deepEqual(args, ['-n', '-E', '75', '-F', '/home/jerett/datasets/perception/xtreme1/nuscenes-v1.0-mini/scene-0061/source',
         '/home/jerett/anaconda3/envs/point_pillar/bin/python', `${root}/scripts/build-centerpoint.py`, '--build']);
     assert.equal(options.cwd, root);
     assert.equal(options.shell, false);
@@ -109,8 +109,15 @@ test('local HTTP contract, single admission, Vite reload and publication', async
 test('another process holding the scene lock prevents the build and preserves the published file', async (context) => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'trial-prelabel-'));
     context.after(() => fs.rmSync(root, { recursive: true, force: true }));
-    const assets = path.join(root, 'public/local-scene');
+    const previousDatabase = process.env.XTREME1_DB_ROOT;
+    const database = path.join(root, 'database');
+    const assets = path.join(database, 'scene-0061/source');
     fs.mkdirSync(assets, { recursive: true });
+    process.env.XTREME1_DB_ROOT = database;
+    context.after(() => {
+        if (previousDatabase === undefined) delete process.env.XTREME1_DB_ROOT;
+        else process.env.XTREME1_DB_ROOT = previousDatabase;
+    });
     const target = path.join(assets, 'centerpoint.json');
     fs.writeFileSync(target, 'previous result');
     const holder = processes.spawn('/usr/bin/flock', ['-F', assets, process.execPath, '-e',

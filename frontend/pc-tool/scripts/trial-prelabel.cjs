@@ -1,6 +1,7 @@
 const { spawn } = require('child_process');
 const { randomUUID } = require('crypto');
 const path = require('path');
+const os = require('os');
 const { createInterface } = require('readline');
 
 const total = 39;
@@ -9,7 +10,9 @@ const interpreter = '/home/jerett/anaconda3/envs/point_pillar/bin/python';
 function launchBuild(root) {
     const env = { ...process.env, PYTHONDONTWRITEBYTECODE: '1', OPENBLAS_NUM_THREADS: '1', OMP_NUM_THREADS: '1' };
     delete env.PYTHONPATH;
-    const assets = path.join(root, 'public/local-scene');
+    const databaseRoot = process.env.XTREME1_DB_ROOT || path.join(os.homedir(), 'datasets/perception/xtreme1/nuscenes-v1.0-mini');
+    const sceneId = process.env.XTREME1_SCENE_ID || 'scene-0061';
+    const assets = path.join(databaseRoot, sceneId, 'source');
     return spawn('/usr/bin/flock', ['-n', '-E', '75', '-F', assets, interpreter, path.join(root, 'scripts/build-centerpoint.py'), '--build'], {
         cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'], shell: false,
     });

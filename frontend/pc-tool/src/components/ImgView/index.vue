@@ -3,7 +3,7 @@
         <div class="view-2d-proxy" ref="proxy"> </div>
         <div class="view-2d-wrap" ref="wrap">
             <template v-if="localTrial">
-                <div class="camera-stage" :data-camera="activeCamera.name">
+                <div v-if="activeCamera" class="camera-stage" :data-camera="activeCamera.name">
                     <template v-for="slot in cameraSlots" :key="slot.name">
                         <Image2D v-if="slot.index >= 0" v-show="slot.name === activeCamera.name"
                             :key="state.imgViews[slot.index].imgUrl" :img-index="slot.index"
@@ -14,7 +14,7 @@
                 </div>
                 <div class="camera-picker" role="group" aria-label="选择相机">
                     <button v-for="slot in cameraSlots" :key="slot.name" type="button"
-                        :aria-pressed="slot.name === selectedCamera" :data-slot="slot.name"
+                        :aria-pressed="slot.name === activeCamera?.name" :data-slot="slot.name"
                         :aria-label="slot.name + (slot.index < 0 ? ' 图像缺失' : '')"
                         :title="slot.name" @click="selectedCamera = slot.name">
                         <img v-if="slot.index >= 0" :key="state.imgViews[slot.index].imgUrl"
@@ -36,6 +36,7 @@
     import { useInjectEditor } from '../../state';
     import { useProvideProxy } from './useProxy';
     import { localTrial } from '../../common/localTrial';
+    import { cameraChannels } from '../../common/trialScene';
     import { isTrialFrameImage } from './trialFrameImage';
     // ***************Props and Emits***************
 
@@ -44,18 +45,19 @@
     let wrap = ref<HTMLDivElement | null>(null);
     let editor = useInjectEditor();
     let state = editor.state;
-    const cameras = [['CAM_FRONT_LEFT', '左前'], ['CAM_FRONT', '正前'], ['CAM_FRONT_RIGHT', '右前'],
-        ['CAM_BACK_LEFT', '左后'], ['CAM_BACK', '正后'], ['CAM_BACK_RIGHT', '右后']];
-    const selectedCamera = ref(cameras[0][0]);
+    const labels = new Map([['CAM_FRONT_LEFT', '左前'], ['CAM_FRONT', '正前'], ['CAM_FRONT_RIGHT', '右前'],
+        ['CAM_BACK_LEFT', '左后'], ['CAM_BACK', '正后'], ['CAM_BACK_RIGHT', '右后']]);
+    const selectedCamera = ref('');
     const thumbnails = new Map<string, HTMLImageElement>();
     function setThumbnail(name: string, element: unknown) {
         if (element instanceof HTMLImageElement) thumbnails.set(name, element);
         else thumbnails.delete(name);
     }
-    const cameraSlots = computed(() => cameras.map(([name, label]) => ({ name, label,
+    const cameraSlots = computed(() => [...Array.from(labels.keys()).filter(name => cameraChannels.value.includes(name)),
+        ...cameraChannels.value.filter(name => !labels.has(name))].map(name => ({ name, label: labels.get(name) || name,
         index: state.imgViews.findIndex(view => view.name === name && isTrialFrameImage(state.frames[state.frameIndex]?.id, view.imgUrl)),
     })));
-    const activeCamera = computed(() => cameraSlots.value.find(slot => slot.name === selectedCamera.value)!);
+    const activeCamera = computed(() => cameraSlots.value.find(slot => slot.name === selectedCamera.value) || cameraSlots.value[0]);
 
     let renderProxy = new Image2DRenderProxy(editor.pc);
     // @ts-ignore

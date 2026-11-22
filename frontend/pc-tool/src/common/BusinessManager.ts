@@ -25,21 +25,15 @@ export default class BusinessManager extends BaseBusinessManager {
         if (localTrial) {
             const scan = scans.find(item => item.id === data.id);
             if (!scan) throw new Error(`Unknown local scan: ${data.id}`);
-            let viewConfig = [];
-            if (scan.viewsUrl) {
-                const response = await fetch(scan.viewsUrl);
-                if (!response.ok) throw new Error(`${scan.viewsUrl}: HTTP ${response.status}`);
-                const linked: IImgViewConfig[] = await response.json();
-                const decoded = await Promise.all(linked.map(async view => {
-                    const image = new Image();
-                    image.src = view.imgUrl;
-                    try { await image.decode(); } catch { return null; }
-                    return { ...view, imgObject: image };
-                }));
-                viewConfig = decoded.filter(view => view !== null);
-            }
+            const decoded = await Promise.all(scan.views.map(async view => {
+                const image = new Image();
+                image.src = view.imgUrl;
+                try { await image.decode(); } catch { return null; }
+                return { ...view, imgObject: image } as IImgViewConfig;
+            }));
+            const viewConfig = decoded.filter(view => view !== null);
             return { pointsUrl: scan.pointsUrl, pointsData: {}, viewConfig,
-                time: 0, name: 'scene-0061' };
+                time: scan.timestamp, name: scan.sceneId };
         }
         const regLidar = new RegExp(/point(_?)cloud/i);
         const regConfig = new RegExp(/camera(_?)config/i);

@@ -2,13 +2,16 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { Matrix4, Vector3 } = require('three');
-const publicDir = path.resolve(__dirname, '../public');
-const manifest = require('../public/local-scene/index.json');
-const keys = manifest.scans.filter(scan => scan.keyframe);
+const publicDir = path.join(require('node:os').homedir(), 'datasets/perception/xtreme1/nuscenes-v1.0-mini/scene-0061/source');
+const manifest = require(path.join(publicDir, 'index.json'));
+const poses = require(path.join(publicDir, 'param/pose.json')).frames;
+const scans = manifest.frames.map(frame => ({ ...frame, pointsUrl: `/local-scene/${frame.cloud}`,
+    worldFromLidar: poses[String(frame.timestamp)].LIDAR_TOP.worldFromSensor }));
+const keys = scans.filter(scan => scan.keyframe);
 const pose = scan => new Matrix4().fromArray(scan.worldFromLidar);
 
 function landmarks(scan) {
-    const data = fs.readFileSync(path.join(publicDir, scan.pointsUrl));
+    const data = fs.readFileSync(path.join(publicDir, scan.pointsUrl.replace(/^\/local-scene\//, '')));
     const offset = data.indexOf('DATA binary\n') + 12;
     const cells = new Map();
     for (let cursor = offset; cursor < data.length; cursor += 16) {
@@ -89,7 +92,7 @@ async function controlled() {
 }
 
 async function real() {
-    const sequence = keys.slice(33, 38), track = tracker(manifest.scans);
+    const sequence = keys.slice(33, 38), track = tracker(scans);
     const picks = [[-1.88, 8.48], [-2.47, 8.17], [-3.12, 7.78], [-3.58, 7.2]];
     const evidence = picks.map(([horizontal, vertical], index) => {
         const found = landmarks(sequence[index]).filter(group => Math.hypot(group.mid.x - horizontal, group.mid.y - vertical) < 0.35);
@@ -100,10 +103,14 @@ async function real() {
     const urls = new Set(sequence.map(scan => scan.pointsUrl));
     global.fetch = async url => {
         assert(urls.has(url));
-        return new Response(fs.readFileSync(path.join(publicDir, url)));
+        return new Response(fs.readFileSync(path.join(publicDir, url.replace(/^\/local-scene\//, ''))));
     };
     let box = { center: [-2.3, 9.1, -0.6], size: [4.9, 2.1, 1.95], yaw: 2.08 };
-    const { cameraExternal, cameraInternal } = require(path.join(publicDir, sequence[0].viewsUrl)).find(view => view.name === 'CAM_FRONT');
+    const calibration = require(path.join(publicDir, 'param/calib.json')).cameras.CAM_FRONT;
+    const framePoses = poses[String(sequence[0].timestamp)];
+    const cameraExternal = new Matrix4().fromArray(framePoses.CAM_FRONT.worldFromSensor).invert()
+        .multiply(new Matrix4().fromArray(framePoses.LIDAR_TOP.worldFromSensor)).transpose().toArray();
+    const { cameraInternal } = calibration;
     const cameraPoint = evidence[0].mid.clone().applyMatrix4(new Matrix4().fromArray(cameraExternal).transpose());
     const pixel = [cameraInternal.fx * cameraPoint.x / cameraPoint.z + cameraInternal.cx,
         cameraInternal.fy * cameraPoint.y / cameraPoint.z + cameraInternal.cy].map(Math.round);

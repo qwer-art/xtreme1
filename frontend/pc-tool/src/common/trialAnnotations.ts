@@ -3,7 +3,7 @@ import { Box } from 'pc-render';
 import { IFrame, ObjectType, utils } from 'pc-editor';
 import type Editor from './Editor';
 import { scans } from './trialScene';
-import { loadDocument, replaceDocument, saveFrames, scanCatalog, validId, validateDocument } from './trialAnnotationStore';
+import { archiveTrialDatabase, loadDocument, persistTrialDatabase, replaceDocument, saveFrames, scanCatalog, validId, validateDocument } from './trialAnnotationStore';
 import type { TrialBox, TrialDocument } from './trialAnnotationStore';
 
 const vector = (coords: [number, number, number]) => new Vector3(...coords);
@@ -36,8 +36,10 @@ export function readLocalObjects(frame: IFrame | IFrame[]) {
     return { objectsMap, classificationMap: {}, queryTime: new Date().toISOString() };
 }
 
-export function saveLocalFrames(frames: Parameters<typeof saveFrames>[0]) {
-    saveFrames(frames, scanCatalog(scans));
+export async function saveLocalFrames(frames: Parameters<typeof saveFrames>[0]) {
+    const catalog = scanCatalog(scans);
+    saveFrames(frames, catalog);
+    await persistTrialDatabase(catalog);
 }
 
 function selected(editor: Editor) {
@@ -163,6 +165,7 @@ export async function importAnnotations(editor: Editor, data: unknown): Promise<
         }
         cmdManager.reset();
         replaceDocument(doc, catalog);
+        await persistTrialDatabase(catalog);
     } catch (error) {
         restore.forEach(undo => undo());
         staged.forEach(({ frame, dirty }) => { frame.needSave = dirty; });
@@ -174,6 +177,12 @@ export async function importAnnotations(editor: Editor, data: unknown): Promise<
         editor.setCurrentTrack(track, name);
         throw error;
     }
+}
+
+export async function archiveLocalAnnotations(editor: Editor) {
+    const document = await exportAnnotations(editor);
+    const archived = await archiveTrialDatabase(document, scanCatalog(scans));
+    return archived;
 }
 
 export type TrialGeometry = { center: [number, number, number]; size: [number, number, number]; yaw: number };

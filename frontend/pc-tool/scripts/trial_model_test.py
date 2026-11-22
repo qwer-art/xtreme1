@@ -8,7 +8,9 @@ from urllib.request import ProxyHandler, Request, build_opener
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-PUBLIC = Path(__file__).resolve().parents[1] / "public"
+PUBLIC = (
+    Path.home() / "datasets/perception/xtreme1/nuscenes-v1.0-mini/scene-0061/source"
+)
 TABLES = Path("/home/jerett/datasets/locomotion/nuscenes/v1.0-mini/v1.0-mini")
 HTTP = build_opener(ProxyHandler({}))
 
@@ -30,16 +32,17 @@ def table(name):
 
 def main():
     print(call("/status"), flush=True)
-    scene = json.loads((PUBLIC / "local-scene/index.json").read_text())
+    scene = json.loads((PUBLIC / "index.json").read_text())
+    poses = json.loads((PUBLIC / "param/pose.json").read_text())["frames"]
     assert scene["scene"] == "scene-0061"
-    scan = next(row for row in scene["scans"] if row["keyframe"])
-    raw = (
-        (PUBLIC / scan["pointsUrl"].lstrip("/"))
-        .read_bytes()
-        .split(b"DATA binary\n", 1)[1]
-    )
+    scan = next(row for row in scene["frames"] if row["keyframe"])
+    raw = (PUBLIC / scan["cloud"]).read_bytes().split(b"DATA binary\n", 1)[1]
     points = np.frombuffer(raw, "<f4").reshape(-1, 4)[:, :3]
-    transform = np.array(scan["worldFromLidar"]).reshape(4, 4).T
+    transform = (
+        np.array(poses[str(scan["timestamp"])]["LIDAR_TOP"]["worldFromSensor"])
+        .reshape(4, 4)
+        .T
+    )
     world = points @ transform[:3, :3].T + transform[:3, 3]
     categories = {row["token"]: row["name"] for row in table("category")}
     instances = {

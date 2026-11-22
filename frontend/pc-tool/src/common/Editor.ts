@@ -86,7 +86,7 @@ export default class Editor extends BaseEditor {
         bsState.saving = true;
         try {
             // debugger
-            if (localTrial) saveLocalFrames(dataInfos);
+            if (localTrial) await saveLocalFrames(dataInfos);
             else this.updateBackId(await api.saveObject(objectInfo));
             frames.forEach((e) => {
                 e.needSave = false;

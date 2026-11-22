@@ -35,13 +35,9 @@ npm run build
 
 ## Local Paired-Frame Workbench
 
-Launch Xtreme1 from the application icon, or start it manually with dependencies installed:
+**标注员与部署人员：** [本地标注数据库 README](./docs/dataset-database.md) 提供当前试标库位置、原始帧与标注结果的对应关系、自采数据接口，以及新电脑的启动和验收命令。
 
-```bash
-cd /home/jerett/catkin_ws/src/xtreme1/frontend/pc-tool
-node scripts/generate-local-scene.cjs --ensure
-npm run dev -- --host 127.0.0.1 --port 3200 --strictPort
-```
+On the configured workstation, launch Xtreme1 from the application icon. For a new workstation use the database guide above. Optional one-time import of existing legacy CenterPoint results on the original workstation: run `node scripts/import-centerpoint-run.cjs --ensure` from this directory. A copied scene with an active prediction run needs no import.
 
 Open http://127.0.0.1:3200/local-trial. The default sequence contains 39 paired scans in scene-0061.
 Previous/next changes the LiDAR cloud and its camera images together. Missing cameras keep their slots.
@@ -56,9 +52,27 @@ Use the frame arrows or frame number to navigate. Open 邻帧 for overlay and ra
 
 In 待审核, click a CenterPoint category name to expand its objects and scores. Click the separate eye to hide or show all of that category's candidate boxes, headings and labels in the cloud. Visibility carries across frame changes without changing pending counts or saved annotations. Object numbers stay stable within the frame and category. Selecting a visible box in the cloud opens its category. Instances is a separate tab.
 
-CenterPoint is the prelabel model. Review existing offline results directly, or click 开始推理 to rebuild them on the local GPU. Progress shows completed scans out of 39 and the percentage; the workbench reloads results after successful publication. The export retains all detector outputs after model post-processing, including scores and world-frame XY velocity (m/s). The tracker supports seven classes; other detections have no cross-frame ID. Adjust and accept to save a box, or reject it; review decisions persist in this browser profile. Reviewing saved predictions does not require the GPU.
+CenterPoint produces per-frame 3D detections; PubTracker associates eligible detections across frames and assigns track IDs. Existing runs load from the database without inference. Clicking 开始推理 creates a new run with separate `detections.json` and `tracking.json` files plus `run.json` provenance, then atomically updates `active.json`. Progress shows completed scans out of 39. The tracker supports seven classes; other detections have no cross-frame ID. Adjust and accept to save a box, or reject it. Working annotations and review decisions persist in the database, not just this browser profile.
 
 ## Local Trial Validation
+
+自有数据首次接入示例。先把点云放入 `yard-01/source/cloud/<微秒>.pcd`，相机放入 `source/image/front/<微秒>.jpg` 等通道目录，按[数据接口说明](./docs/dataset-database.md)填写 `source/param/{pose,calib}.json`。
+
+```bash
+cd /home/jerett/catkin_ws/src/xtreme1/frontend/pc-tool
+export XTREME1_DB_ROOT="$HOME/datasets/perception/xtreme1/my-dataset"
+export XTREME1_SCENE_ID=yard-01
+node scripts/index-local-scene.cjs "$XTREME1_DB_ROOT/$XTREME1_SCENE_ID"
+npm run dev -- --host 127.0.0.1 --port 3201 --strictPort
+```
+
+以后用相同环境变量直接启动，打开 http://127.0.0.1:3201/local-trial 。索引命令只需执行一次，不覆盖已有清单。手工标注无需推理；当前 CenterPoint 构建器仅适配 nuScenes mini 的 `scene-0061`。
+
+后台验证自有格式（临时单相机场景，含无图帧、导出和工作稿回写）：
+
+```bash
+node --test tests/custom-scene.cjs
+```
 
 Check the offline CenterPoint predictions against the raw point cloud:
 
@@ -66,10 +80,10 @@ Check the offline CenterPoint predictions against the raw point cloud:
 node tests/centerpoint-trial.cjs --assets
 ```
 
-Run the browser review/save flow with the workbench open at `127.0.0.1:3200`:
+Run the browser review, persistence and archive flow in an isolated temporary database:
 
 ```bash
-node tests/centerpoint-trial.cjs
+node scripts/test-trial-database.cjs
 ```
 
 Check the Point-SAM service on port 3211 using the first scene scan and local nuScenes data:
@@ -93,9 +107,7 @@ click three footprint corners; in AI Box mode, drag a rectangle around one targe
 in the top-down point cloud. AI Box fits geometry; it does not detect a whole frame.
 With a box selected, use **A/D**, **Q/E**, **W/S** to translate, **Z/X** to rotate,
 **Delete** to remove or **Ctrl+Z** to undo. Press **Ctrl+S** or click **Save**
-before refreshing. Labels use the native object format and stay in this
-browser's localStorage, keyed by LiDAR sample_data token. Use the same host, port and browser profile
-to reopen them. This development-only URL requires no backend or login.
+before refreshing. Saved labels use the native object format and persist to the database. Use 文件 → 归档已确认版本 to write an immutable accepted snapshot. Browser localStorage is only a cache. This development-only URL requires no cloud backend or login.
 
 ## Related Information
 

@@ -3,7 +3,7 @@
         <div class="trial-frame-line">
         <div class="trial-frame-tools" role="group" aria-label="帧导航">
         <label>帧 <select data-testid="trial-mode" :value="mode" @change="changeMode">
-            <option value="key">图像配对帧</option><option value="all">全部扫描</option>
+            <option value="key" :disabled="!hasPairedFrames">图像配对帧</option><option value="all">全部扫描</option>
         </select></label>
         <div class="trial-pager">
             <button type="button" title="上一帧" aria-label="上一帧" data-testid="trial-prev" :disabled="index <= 0" @click="navigate(index - 1)"><LeftOutlined /></button>
@@ -34,6 +34,7 @@
         </div>
         <div v-show="panel === 'file'" id="trial-options-file" class="trial-options" role="group" aria-label="标注文件">
         <button type="button" data-testid="trial-export" @click="download"><ExportOutlined aria-hidden="true" /> 导出 JSON</button>
+        <button type="button" data-testid="trial-archive" @click="archive"><SaveOutlined aria-hidden="true" /> 归档已确认版本</button>
         <label class="trial-file"><ImportOutlined aria-hidden="true" /> 导入 JSON<input type="file" accept=".json,application/json" data-testid="trial-import" @change="upload" /></label>
         </div>
         <div v-show="panel === 'box'" id="trial-options-box" class="trial-options" role="group" aria-label="三维框修正">
@@ -49,17 +50,18 @@
         <button type="button" data-testid="trial-box-apply" :disabled="!selection" @click="applyGeometry">应用修正</button>
         </div>
         <span v-if="error" role="alert">{{ error }}</span>
+        <output v-if="archiveStatus" data-testid="trial-archive-status" role="status">{{ archiveStatus }}</output>
     </fieldset>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
-import { ApartmentOutlined, BlockOutlined, BorderOutlined, ClockCircleOutlined, ExportOutlined, FolderOpenOutlined, ImportOutlined, LeftOutlined, RightOutlined } from '@ant-design/icons-vue';
+import { ApartmentOutlined, BlockOutlined, BorderOutlined, ClockCircleOutlined, ExportOutlined, FolderOpenOutlined, ImportOutlined, LeftOutlined, RightOutlined, SaveOutlined } from '@ant-design/icons-vue';
 import { Event } from 'pc-editor';
 import { useInjectEditor } from '../../state';
-import { scans, setSceneFilter } from '../../common/trialScene';
+import { hasPairedFrames, scans, setSceneFilter } from '../../common/trialScene';
 import { setTrialOverlay } from '../../common/trialOverlay';
-import { assignTrack, captureSelected, copySelected, exportAnnotations, getSelectedGeometry, importAnnotations, listTracks, updateSelectedGeometry } from '../../common/trialAnnotations';
+import { archiveLocalAnnotations, assignTrack, captureSelected, copySelected, exportAnnotations, getSelectedGeometry, importAnnotations, listTracks, updateSelectedGeometry } from '../../common/trialAnnotations';
 import type { TrialSnapshot } from '../../common/trialAnnotations';
 
 const props = defineProps<{ blocking: boolean }>();
@@ -72,6 +74,7 @@ const panels = [
 const panel = ref<'' | typeof panels[number]['id']>('');
 const editor = useInjectEditor();
 const mode = ref<'all' | 'key'>('key');
+watch(hasPairedFrames, paired => { mode.value = paired ? 'key' : 'all'; }, { immediate: true });
 const index = computed(() => editor.state.frameIndex);
 const count = computed(() => editor.state.frames.length);
 const id = computed(() => editor.state.frames[index.value]?.id || '');
@@ -88,6 +91,7 @@ const tracks = ref<string[]>([]);
 const selection = shallowRef<TrialSnapshot | null>(null);
 const departed = shallowRef<TrialSnapshot | null>(null);
 const error = ref('');
+const archiveStatus = ref('');
 const geometryX = ref(0);
 const geometryY = ref(0);
 const geometryZ = ref(0);
@@ -154,9 +158,15 @@ function download() {
         const url = URL.createObjectURL(new Blob([JSON.stringify(doc)], { type: 'application/json' }));
         const link = document.createElement('a');
         link.href = url;
-        link.download = 'scene-0061-annotations.json';
+        link.download = `${doc.scene}-annotations.json`;
         link.click();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+}
+function archive() {
+    return run(async () => {
+        const result = await archiveLocalAnnotations(editor);
+        archiveStatus.value = `已归档版本 ${result.version}`;
     });
 }
 function upload(event: globalThis.Event) {

@@ -157,12 +157,13 @@ function adjust(event: globalThis.Event, field: 'center' | 'size' | 'yaw', axis 
         if (!Number.isFinite(value) || (field === 'size' && value <= 0)) throw new Error('请输入有效几何值，尺寸必须为正');
         if (field === 'yaw') adjusted.yaw = value;
         else { adjusted[field] = [...item[field]]; adjusted[field][axis] = value; }
-        writeReview(adjusted, 'adjusted'); revision.value++; message.value = '';
+        void writeReview(adjusted, 'adjusted').catch(error => { message.value = errorText(error); });
+        revision.value++; message.value = '';
     } catch (error) { input.value = String(field === 'yaw' ? item.yaw : item[field][axis]); message.value = errorText(error); }
 }
 function reject(item: CenterPointCandidate) {
     if (blocked.value || item.scanId !== scanId.value) return;
-    try { writeReview(item, 'rejected'); revision.value++; message.value = '已拒绝'; }
+    try { void writeReview(item, 'rejected').catch(error => { message.value = errorText(error); }); revision.value++; message.value = '已拒绝'; }
     catch (error) { message.value = errorText(error); }
 }
 function awaitingSave(item: CenterPointCandidate) {
@@ -177,12 +178,12 @@ async function accept(item: CenterPointCandidate) {
         if (!awaitingSave(item)) {
             if (formal.some(box => box.uuid === item.id || box.userData.trackId === item.trackId))
                 throw new Error(`本帧已有轨迹或框 ${item.trackId}，已保留正式框`);
-            writeReview(item, 'accepting');
+            await writeReview(item, 'accepting');
             acceptCandidates(editor, [item]);
         }
         await editor.saveObject([frame]);
         if (editor.needSave([frame])) throw new Error('正式框尚未保存，请重试接受');
-        writeReview(item, 'accepted'); message.value = '已接受并保存';
+        await writeReview(item, 'accepted'); message.value = '已接受并保存';
     } catch (error) { message.value = errorText(error); }
     finally { revision.value++; busy.value = false; }
 }

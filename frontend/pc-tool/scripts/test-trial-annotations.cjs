@@ -22,8 +22,10 @@ async function run() {
     const CmdBase = load('packages/pc-editor/common/CmdManager/CmdBase');
     const Add = load('packages/pc-editor/common/CmdManager/cmd/AddObject', { '../CmdBase': CmdBase }).default;
     const store = load('common/trialAnnotationStore');
-    const manifest = require('../public/local-scene/index.json');
-    const scans = manifest.scans.map(scan => ({ ...scan }));
+    const sourceRoot = path.join(require('node:os').homedir(), 'datasets/perception/xtreme1/nuscenes-v1.0-mini/scene-0061/source');
+    const manifest = require(path.join(sourceRoot, 'index.json'));
+    const poses = require(path.join(sourceRoot, 'param/pose.json')).frames;
+    const scans = manifest.frames.map(frame => ({ ...frame, worldFromLidar: poses[String(frame.timestamp)].LIDAR_TOP.worldFromSensor }));
     const [original, target] = scans.slice(0, 2).map(scan => scan.id);
     scans[0].worldFromLidar = new THREE.Matrix4().makeRotationZ(Math.PI / 2).setPosition(10, 0, 0).toArray();
     scans[1].worldFromLidar = new THREE.Matrix4().makeTranslation(2, 0, 0).toArray();
@@ -31,6 +33,7 @@ async function run() {
         'pc-render': { Box }, './trialScene': { scans }, './trialAnnotationStore': store });
     const saved = new Map();
     global.localStorage = { getItem: key => saved.get(key) ?? null, setItem: (key, val) => saved.set(key, val) };
+    global.fetch = async () => new Response(JSON.stringify({ saved: true }), { status: 200 });
     const frames = scans.slice(0, 2).map(({ id }) => ({ id, needSave: false }));
     const cache = new Map();
     const legacy = { objects: [{ frontId: 'original-box', classAttributes: { type: '3D_BOX', classId: 'Car',
@@ -66,7 +69,7 @@ async function run() {
         async saveObject() {
             for (const frame of this.state.frames.filter(frame => frame.needSave)) {
                 const objects = result.convertAnnotate2Object(cache.get(frame.id), this);
-                api.saveLocalFrames([{ dataId: frame.id, objects: objects.map(obj => ({ frontId: obj.frontId,
+                await api.saveLocalFrames([{ dataId: frame.id, objects: objects.map(obj => ({ frontId: obj.frontId,
                     classId: obj.classId || this.pc.selection[0]?.userData.classId,
                     classAttributes: result.translateToObjectV2(obj) })) }]);
                 frame.needSave = false;

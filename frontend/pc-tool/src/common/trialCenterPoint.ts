@@ -1,9 +1,10 @@
 import type { Candidate, Triple } from './trialCandidates';
-import { validId } from './trialAnnotationStore';
+import { persistReviewDatabase, sceneCacheId, validId } from './trialAnnotationStore';
 import { detectionColors } from './trialDetectionColors';
+import { scans } from './trialScene';
 
-const scene = 'scene-0061';
-const url = '/local-scene/centerpoint.json';
+const url = '/trial-data/centerpoint';
+const sceneId = () => scans[0]?.sceneId || 'scene-0061';
 export interface CenterPointCandidate extends Candidate { sourceId: string; score: number; accepting?: boolean }
 export type CenterPointFrames = Record<string, unknown>;
 
@@ -21,8 +22,8 @@ export async function loadCenterPoint(refreshKey?: string): Promise<CenterPointF
         throw new Error(`缺少 CenterPoint 离线结果：${url}`);
     if (!response.ok) throw new Error(`CenterPoint 离线结果读取失败：HTTP ${response.status}`);
     const data: unknown = await response.json();
-    if (!record(data) || data.model !== 'CenterPoint' || data.scene !== scene || !record(data.frames))
-        throw new Error(`CenterPoint 离线结果格式错误或场景不是 ${scene}`);
+    if (!record(data) || data.model !== 'CenterPoint' || data.scene !== sceneId() || !record(data.frames))
+        throw new Error(`CenterPoint 离线结果格式错误或场景不是 ${sceneId()}`);
     return data.frames;
 }
 
@@ -47,12 +48,13 @@ export function centerPointFrame(frames: CenterPointFrames, scanId: string): Cen
 }
 
 type Decision = 'adjusted' | 'accepting' | 'accepted' | 'rejected';
-function reviewKey(item: CenterPointCandidate) { return `xtreme1:local-trial:review:v1:${scene}:${item.id}`; }
+function reviewKey(item: CenterPointCandidate) { return `xtreme1:local-trial:review:v1:${sceneCacheId(scans[0])}:${item.id}`; }
 
-export function writeReview(item: CenterPointCandidate, decision: Decision) {
+export function writeReview(item: CenterPointCandidate, decision: Decision): Promise<void> {
     const { center, size, yaw, trackId, score, category } = item;
     localStorage.setItem(reviewKey(item), JSON.stringify({ decision, center, size, yaw, trackId, score,
         category, reviewedAt: new Date().toISOString() }));
+    return persistReviewDatabase(sceneCacheId(scans[0]));
 }
 
 export function pendingReview(item: CenterPointCandidate, savedBox: (id: string) => boolean) {
@@ -66,7 +68,7 @@ export function pendingReview(item: CenterPointCandidate, savedBox: (id: string)
         throw new Error(`审核记录无效：${item.sourceId}`);
     const adjusted = { ...item, center: value.center, size: value.size, yaw: value.yaw, accepting: value.decision === 'accepting' };
     if (value.decision === 'accepting' && savedBox(item.id)) {
-        writeReview(adjusted, 'accepted');
+        void writeReview(adjusted, 'accepted');
         return undefined;
     }
     return adjusted;

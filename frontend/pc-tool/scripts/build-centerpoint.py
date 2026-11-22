@@ -16,14 +16,24 @@ Export every post-NMS detection; unsupported tracking classes have a null trackI
 import argparse
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import time
+import uuid
 from pathlib import Path
 
 import numpy as np
 
-ASSETS = Path(__file__).resolve().parents[1] / "public/local-scene"
+SCENE_ROOT = Path(
+    os.environ.get(
+        "XTREME1_DB_ROOT",
+        Path.home() / "datasets/perception/xtreme1/nuscenes-v1.0-mini",
+    )
+) / os.environ.get("XTREME1_SCENE_ID", "scene-0061")
+ASSETS = SCENE_ROOT / "source"
+RUNS = SCENE_ROOT / "predictions/centerpoint-pubtracker/runs"
+ACTIVE_RUN = SCENE_ROOT / "predictions/centerpoint-pubtracker/active.json"
 DEFAULT_ROOT = Path.home() / "datasets/locomotion/nuscenes/v1.0-mini"
 SCENE = "scene-0061"
 CONFIG = "centerpoint_02pillar_second_secfpn_circlenms_4x8_cyclic_20e_nus"
@@ -77,7 +87,18 @@ def sequence(root):
     (scene,) = (item for item in read(metadata / "scene.json") if item["name"] == SCENE)
     samples = {item["token"]: item for item in read(metadata / "sample.json")}
     manifest = read(ASSETS / "index.json")
-    scans = [scan for scan in manifest["scans"] if scan["keyframe"]]
+    poses = read(ASSETS / "param/pose.json")["frames"]
+    scans = [
+        dict(
+            **frame,
+            worldFromLidar=poses[str(frame["timestamp"])]["LIDAR_TOP"][
+                "worldFromSensor"
+            ],
+            pointsUrl=f"/local-scene/{frame['cloud']}",
+        )
+        for frame in manifest["frames"]
+        if frame["keyframe"]
+    ]
     lidar = {item["token"]: item for item in read(metadata / "sample_data.json")}
     token = scene["first_sample_token"]
     assert manifest["scene"] == SCENE and len(scans) == scene["nbr_samples"] == 39
@@ -250,6 +271,7 @@ def generate(args):
     pipeline = Compose(model.cfg.data.test.pipeline)
     tracker = PubTracker(hungarian=False, max_age=3)
     last_time = scans[0]["timestamp"]
+    detections = {}
     frames = {}
     start = time.monotonic()
     for index, scan in enumerate(scans):
@@ -274,6 +296,10 @@ def generate(args):
             previous = past["prev"]
         boxes = infer(model, pipeline, args.root, record, sweeps)
         entries = boxes_for_tracker(boxes, world, model.CLASSES)
+        detections[scan["id"]] = [
+            dict(id=f"all-det-{rank}", trackId=None, **entry["row"])
+            for rank, entry in enumerate(entries)
+        ]
         tracks = tracker.step_centertrack(
             [
                 entry
@@ -308,19 +334,55 @@ def generate(args):
         )
         if args.first:
             return
-    target = ASSETS / "centerpoint.json"
-    temp = target.with_suffix(".json.tmp")
-    temp.write_text(
+    run_id = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()) + "-" + uuid.uuid4().hex[:8]
+    staging = RUNS / f".{run_id}.tmp"
+    target = RUNS / run_id
+    staging.mkdir(parents=True, exist_ok=False)
+    manifest_bytes = (ASSETS / "index.json").read_bytes()
+    detection_file = staging / "detections.json"
+    detection_file.write_text(
         json.dumps(
-            dict(model="CenterPoint", scene=SCENE, frames=frames),
+            dict(model="CenterPoint", scene=SCENE, frames=detections),
             separators=(",", ":"),
             allow_nan=False,
         )
         + "\n"
     )
-    temp.replace(target)
+    tracking_file = staging / "tracking.json"
+    tracking_file.write_text(
+        json.dumps(
+            dict(model="CenterPoint", tracker="PubTracker", scene=SCENE, frames=frames),
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        + "\n"
+    )
+    run = dict(
+        schema="xtreme1-inference-run-v1",
+        runId=run_id,
+        status="complete",
+        createdAt=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        scene=SCENE,
+        sourceDataset="nuScenes-v1.0-mini",
+        sourceRoot=str(args.root),
+        inputManifestSha256=hashlib.sha256(manifest_bytes).hexdigest(),
+        detector=dict(name="CenterPoint", config=CONFIG, weights=WEIGHT),
+        tracker=dict(
+            name="PubTracker", source="tianweiy/CenterPoint", maxAge=3, hungarian=False
+        ),
+        outputs=dict(detections="detections.json", tracks="tracking.json"),
+        frames=len(frames),
+        detections=sum(map(len, detections.values())),
+        tracks=sum(map(len, frames.values())),
+    )
+    (staging / "run.json").write_text(json.dumps(run, indent=2) + "\n")
+    staging.rename(target)
+    pointer = ACTIVE_RUN.with_suffix(".json.tmp")
+    pointer.parent.mkdir(parents=True, exist_ok=True)
+    pointer.write_text(json.dumps(dict(runId=run_id, tracking="tracking.json")) + "\n")
+    pointer.replace(ACTIVE_RUN)
     print(
-        f"{target}: {len(frames)} frames / {sum(map(len, frames.values()))} detections",
+        f"run={target} frames={len(frames)} detections={run['detections']} tracks={run['tracks']}",
         flush=True,
     )
 
@@ -346,6 +408,18 @@ if __name__ == "__main__":
         help="check first, infer 39 keyframes and publish atomically",
     )
     args = parser.parse_args()
+    if not args.weights:
+        dataset = read(ASSETS / "dataset.json")
+        if (
+            SCENE_ROOT.name != SCENE
+            or dataset.get("scene") != SCENE
+            or dataset.get("sourceDataset") != "nuScenes/v1.0-mini"
+            or Path(os.environ.get("XTREME1_SOURCE_ROOT", ASSETS)).resolve()
+            != ASSETS.resolve()
+        ):
+            parser.error(
+                "This CenterPoint adapter only supports nuScenes mini scene-0061"
+            )
     if args.weights:
         checkpoint(args.cache)
     elif args.inspect:

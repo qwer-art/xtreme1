@@ -4,11 +4,16 @@ const assert = require('node:assert/strict');
 const { Matrix4, Quaternion, Vector3 } = require('three');
 
 const root = process.argv[2] || '/home/jerett/datasets/locomotion/nuscenes/v1.0-mini';
-const asset = url => path.join(__dirname, '../public', url);
+const sourceRoot = path.join(require('node:os').homedir(), 'datasets/perception/xtreme1/nuscenes-v1.0-mini/scene-0061/source');
+const asset = url => path.join(sourceRoot, url.replace(/^\/local-scene\//, ''));
 const json = filename => JSON.parse(fs.readFileSync(filename, 'utf8'));
 const table = name => json(path.join(root, 'v1.0-mini', `${name}.json`));
 const index = name => new Map(table(name).map(row => [row.token, row]));
-const { scene, scans } = json(asset('/local-scene/index.json'));
+const { scene, frames } = json(path.join(sourceRoot, 'index.json'));
+const poseFrames = json(path.join(sourceRoot, 'param/pose.json')).frames;
+const sensorCalibration = json(path.join(sourceRoot, 'param/calib.json')).cameras;
+const scans = frames.map(frame => ({ ...frame, pointsUrl: `/local-scene/${frame.cloud}`,
+    worldFromLidar: poseFrames[String(frame.timestamp)].LIDAR_TOP.worldFromSensor }));
 assert.equal(scene, 'scene-0061');
 const sceneToken = table('scene').find(row => row.name === scene).token;
 const samples = new Set(table('sample').filter(row => row.scene_token === sceneToken).map(row => row.token));
@@ -16,8 +21,9 @@ const sensors = index('sensor'), calibrations = index('calibrated_sensor'), pose
 const channel = row => sensors.get(calibrations.get(row.calibrated_sensor_token).sensor_token).channel;
 const rows = table('sample_data').filter(row => samples.has(row.sample_token));
 const lidar = rows.filter(row => channel(row) === 'LIDAR_TOP').sort((first, second) => first.timestamp - second.timestamp);
-const cameras = new Map(rows.filter(row => row.is_key_frame).map(row => [`${row.sample_token}/${channel(row)}`, row]));
+const cameras = new Map(rows.filter(row => row.filename.startsWith('samples/')).map(row => [`${row.sample_token}/${channel(row)}`, row]));
 const rotation = row => new Quaternion(...row.rotation.slice(1), row.rotation[0]).normalize();
+const transform = row => new Matrix4().makeRotationFromQuaternion(rotation(row)).setPosition(...row.translation);
 const forward = (point, row) => point.applyQuaternion(rotation(row)).add(new Vector3(...row.translation));
 const inverse = (point, row) => point.sub(new Vector3(...row.translation)).applyQuaternion(rotation(row).invert());
 const channels = ['CAM_FRONT', 'CAM_FRONT_RIGHT', 'CAM_BACK_RIGHT', 'CAM_BACK', 'CAM_BACK_LEFT', 'CAM_FRONT_LEFT'];
@@ -50,20 +56,30 @@ for (const [ordinal, scan] of scans.entries()) {
     const world = probes.map(point => forward(forward(point.clone(), calibrations.get(row.calibrated_sensor_token)), poses.get(row.ego_pose_token)));
     const matrix = new Matrix4().fromArray(scan.worldFromLidar);
     probes.forEach((point, axis) => assert(point.clone().applyMatrix4(matrix).distanceTo(world[axis]) < 1e-8));
-    if (!scan.keyframe) { assert.equal(scan.viewsUrl, null); continue; }
-    const views = json(asset(scan.viewsUrl));
-    assert.deepEqual(views.map(view => view.name), channels);
-    for (const view of views) {
-        const camera = cameras.get(`${row.sample_token}/${view.name}`), calibration = calibrations.get(camera.calibrated_sensor_token);
-        assert(view.imgUrl.startsWith('/local-scene/'));
-        assert(fs.readFileSync(asset(view.imgUrl)).equals(fs.readFileSync(path.join(root, camera.filename))));
-        assert.equal(view.imgObject, null);
-        assert.deepEqual(view.imgSize, [camera.width, camera.height]);
+    assert.deepEqual(scan.worldFromLidar, poseFrames[String(scan.timestamp)].LIDAR_TOP.worldFromSensor);
+    const scanImages = scan.images;
+    if (!scan.keyframe) { assert.equal(scanImages.length, 0); continue; }
+    assert.deepEqual(scanImages.map(image => image.channel), channels);
+    for (const image of scanImages) {
+        const camera = cameras.get(`${row.sample_token}/${image.channel}`);
+        const calibration = calibrations.get(camera.calibrated_sensor_token);
+        const storedCalibration = sensorCalibration[image.channel];
+        assert.equal(image.timestamp, camera.timestamp);
+        assert.equal(image.path, `image/${image.channel}/${camera.timestamp}.jpg`);
+        assert(fs.readFileSync(asset(`/local-scene/${image.path}`)).equals(fs.readFileSync(path.join(root, camera.filename))));
+        assert.deepEqual(storedCalibration.imageSize, [camera.width, camera.height]);
         const [[fx, , cx], [, fy, cy]] = calibration.camera_intrinsic;
-        assert.deepEqual(view.cameraInternal, { fx, fy, cx, cy });
-        const external = new Matrix4().set(...view.cameraExternal);
-        probes.forEach((point, axis) => assert(point.clone().applyMatrix4(external).distanceTo(
-            inverse(inverse(world[axis].clone(), poses.get(camera.ego_pose_token)), calibration)) < 1e-8));
+        assert.deepEqual(storedCalibration.cameraInternal, { fx, fy, cx, cy });
+        const storedExtrinsic = new Matrix4().fromArray(storedCalibration.egoFromSensor);
+        const sourceExtrinsic = transform(calibration);
+        probes.forEach((point, axis) => assert(point.clone().applyMatrix4(storedExtrinsic).distanceTo(point.clone().applyMatrix4(sourceExtrinsic)) < 1e-8));
+        const cameraWorld = new Matrix4().fromArray(poseFrames[String(scan.timestamp)][image.channel].worldFromSensor);
+        const lidarWorld = new Matrix4().fromArray(scan.worldFromLidar);
+        const cameraFromLidar = cameraWorld.clone().invert().multiply(lidarWorld);
+        const registeredCamera = new Matrix4().set(...cameraFromLidar.clone().transpose().toArray());
+        const cameraFromWorld = transform(poses.get(camera.ego_pose_token)).multiply(transform(calibration)).invert();
+        probes.forEach((point, axis) => assert(point.clone().applyMatrix4(registeredCamera).distanceTo(
+            world[axis].clone().applyMatrix4(cameraFromWorld)) < 1e-8));
         images++;
     }
 }

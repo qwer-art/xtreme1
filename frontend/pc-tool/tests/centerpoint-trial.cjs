@@ -4,23 +4,31 @@ const path = require('node:path');
 const { createHash } = require('node:crypto');
 const { rawPoints, support } = require('./centerpoint-bev.cjs');
 const { inspectScene, matches, captureBev } = require('./centerpoint-render.cjs');
+const os = require('node:os');
 
-const publicRoot = path.resolve(__dirname, '../public');
-const artifact = path.join(publicRoot, 'local-scene/centerpoint.json');
+const databaseRoot = process.env.XTREME1_DB_ROOT || path.join(os.homedir(), 'datasets/perception/xtreme1/nuscenes-v1.0-mini');
+const sceneRoot = path.join(databaseRoot, 'scene-0061');
+const sourceRoot = process.env.XTREME1_SOURCE_ROOT || path.join(sceneRoot, 'source');
+const predictionRoot = path.join(sceneRoot, 'predictions/centerpoint-pubtracker');
 const screenshot = process.env.TRIAL_SCREENSHOT || '/home/jerett/main/daily/xtreme1/centerpoint-scene-0061-all-classes.png';
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const round = value => Number(value.toFixed(5));
 const reviewable = box => ['Car', 'Pedestrian', 'Bicycle', 'Motorcycle'].includes(box.category) && box.score >= 0.5;
+const sourceAsset = url => path.join(sourceRoot, url.replace(/^\/local-scene\//, ''));
 
 function prepare() {
-    assert.ok(fs.existsSync(artifact), `BLOCKED: missing real predictions: ${artifact}`);
+    const pointerPath = path.join(predictionRoot, 'active.json');
+    assert.ok(fs.existsSync(pointerPath), `BLOCKED: missing active inference pointer: ${pointerPath}`);
+    const pointer = JSON.parse(fs.readFileSync(pointerPath));
+    const artifact = path.join(predictionRoot, 'runs', pointer.runId, pointer.tracking || 'tracking.json');
+    assert.ok(fs.existsSync(artifact), `BLOCKED: missing active tracking result: ${artifact}`);
     const bytes = fs.readFileSync(artifact), predictions = JSON.parse(bytes);
-    const manifest = JSON.parse(fs.readFileSync(path.join(publicRoot, 'local-scene/index.json')));
+    const manifest = JSON.parse(fs.readFileSync(path.join(sourceRoot, 'index.json')));
     assert.equal(predictions.model, 'CenterPoint');
     assert.equal(predictions.scene, 'scene-0061');
     assert.equal(predictions.scene, manifest.scene);
     assert.ok(predictions.frames && !Array.isArray(predictions.frames) && typeof predictions.frames === 'object');
-    const scans = new Set(manifest.scans.map(scan => scan.id));
+    const scans = new Set(manifest.frames.map(scan => scan.id));
     for (const [scanId, boxes] of Object.entries(predictions.frames)) {
         assert.ok(scans.has(scanId) && Array.isArray(boxes), `invalid lidarScanId: ${scanId}`);
         for (const box of boxes) {
@@ -38,14 +46,17 @@ function prepare() {
             assert.equal(new Set(values).size, values.length, `duplicate ${key} in ${scanId}`);
         }
     }
-    const keys = manifest.scans.filter(scan => scan.keyframe);
+    const keys = manifest.frames.filter(scan => scan.keyframe).map(frame => ({
+        ...frame,
+        pointsUrl: `/local-scene/${frame.cloud}`,
+    }));
     const scan = keys.find(item => predictions.frames[item.id]?.filter(reviewable).length >= 3);
     assert.ok(scan && keys.length >= 2, 'BLOCKED: need a keyframe with >=3 real candidates and another keyframe');
     const allBoxes = predictions.frames[scan.id];
     const boxes = allBoxes.filter(reviewable);
     const other = keys.find(item => item !== scan && predictions.frames[item.id]?.some(box => reviewable(box) && boxes.some(first => first.trackId === box.trackId))) || keys.find(item => item !== scan && predictions.frames[item.id]?.some(reviewable));
     assert.ok(other, 'BLOCKED: need another keyframe with reviewable candidates');
-    const points = rawPoints(fs.readFileSync(path.join(publicRoot, scan.pointsUrl)));
+    const points = rawPoints(fs.readFileSync(sourceAsset(scan.pointsUrl)));
     const evidence = allBoxes.map(box => support(points, box)).sort((first, second) => second.inside - first.inside);
     console.log('BEV raw LIDAR_TOP; local spans L/W/H and +/-1.5W comparison windows (metres)', JSON.stringify({
         scan: scan.id, pcd: scan.pointsUrl, points: points.length, candidates: boxes.length,
@@ -79,7 +90,9 @@ async function browserRun(data) {
         const forbidden = [], predictionResponses = [];
         await context.route(/^https?:/, route => {
             const request = route.request(), target = new URL(request.url());
-            if (/\/(?:segment(?:ation)?)(?:\/|$)/i.test(target.pathname) || !['GET', 'HEAD', 'OPTIONS'].includes(request.method())) {
+            const databaseWrite = /^\/trial-data\/(?:annotations|annotations\/archive|reviews)$/.test(target.pathname);
+            if (/\/(?:segment(?:ation)?)(?:\/|$)/i.test(target.pathname) ||
+                (!['GET', 'HEAD', 'OPTIONS'].includes(request.method()) && !databaseWrite)) {
                 forbidden.push(`${request.method()} ${target.pathname}`); return route.abort();
             }
             return target.origin === url.origin ? route.continue() : route.abort();
@@ -87,16 +100,20 @@ async function browserRun(data) {
         const page = await context.newPage();
         page.setDefaultTimeout(20000);
         page.on('response', response => {
-            if (new URL(response.url()).pathname === '/local-scene/centerpoint.json') predictionResponses.push(response);
+            if (new URL(response.url()).pathname === '/trial-data/centerpoint') predictionResponses.push(response);
         });
         await page.goto(url.href, { waitUntil: 'domcontentloaded' });
         const test = name => page.getByTestId(name);
+        if (data) {
+            const emptyDatabaseStatus = await page.evaluate(() => fetch('/trial-data/annotations', { cache: 'no-store' }).then(response => response.status));
+            assert.equal(emptyDatabaseStatus, 404, 'opening with an empty browser profile must not persist an empty document');
+        }
         if (!data) {
             const state = await eventually('isolated raw cloud', async () => {
                 const state = await page.evaluate(inspectScene); assert.ok(state?.count > 0 && state.id); return state;
             });
-            const scan = JSON.parse(fs.readFileSync(path.join(publicRoot, 'local-scene/index.json'))).scans.find(item => item.id === state.id);
-            verifyRaw(state, rawPoints(fs.readFileSync(path.join(publicRoot, scan.pointsUrl))));
+            const scan = JSON.parse(fs.readFileSync(path.join(sourceRoot, 'index.json'))).frames.find(item => item.id === state.id);
+            verifyRaw(state, rawPoints(fs.readFileSync(sourceAsset(`/local-scene/${scan.cloud}`))));
             assert.deepEqual(forbidden, []);
             console.log(`PROBE ONLY: isolated Chrome ${browser.version()}, ${state.id}: ${state.count} points; no review, no screenshot`); return;
         }
@@ -186,12 +203,13 @@ async function browserRun(data) {
                 return center.x + size.x / 2 > 0 && center.x - size.x / 2 < candidate.imgSize.x &&
                     center.y + size.y / 2 > 0 && center.y - size.y / 2 < candidate.imgSize.y;
             });
-            return view?.img?.src.match(/\/(CAM_[A-Z_]+)\.jpg$/)?.[1];
+            return window.editor.state.imgViews.find(camera => camera.imgObject?.src === view?.img?.src)?.name;
         }, formalId(scan, toEdit));
         assert.ok(sensor, 'selected candidate has no camera projection');
         await page.locator(`.camera-picker [data-slot="${sensor}"]`).click();
         await page.waitForFunction(name => window.editor.pc.renderViews.some(view =>
-            view.name.startsWith('image-2d-small-') && view.isViewRenderable() && view.img?.src.includes(`${name}.jpg`)), sensor);
+            view.name.startsWith('image-2d-small-') && view.isViewRenderable() &&
+            view.img?.src === window.editor.state.imgViews.find(camera => camera.name === name)?.imgObject?.src), sensor);
         const cameraLabels = await page.evaluate(() => {
             const view = window.editor.pc.renderViews.find(view => view.name.startsWith('image-2d-small-') && view.isViewRenderable());
             if (!view) throw new Error('no active camera view');
@@ -236,6 +254,13 @@ async function browserRun(data) {
         await page.reload({ waitUntil: 'domcontentloaded' });
         await go(scan); await checkFrame(scan, pending, accepted);
         await go(other); await checkFrame(other, otherPending, otherAccepted);
+        await page.getByRole('button', { name: '文件' }).click();
+        await test('trial-archive').click();
+        const archiveStatus = await eventually('confirmed annotations archived to database', async () => {
+            const text = await test('trial-archive-status').textContent();
+            assert.match(text || '', /^已归档版本 /);
+            return text;
+        });
         assert.ok(predictionResponses.length >= 2, 'missing offline reload');
         assert.equal(digest(await predictionResponses.at(-1).body()), digest(data.bytes));
         assert.deepEqual(forbidden, []);
@@ -246,7 +271,7 @@ async function browserRun(data) {
             assert.equal(digest(fs.readFileSync(screenshot)), digest(captured.png), `existing PNG differs from the verified live capture; preserved ${screenshot}`);
             console.log(`Existing PNG identical to live capture: ${screenshot}`);
         }
-        console.log(`PASS real CenterPoint; edited=${edited.id}, rejected=${toReject.id}, accepted track=${original.trackId}, cross-frame=${shared?.trackId ?? 'no shared ID in input'}, segmentationRequests=0`);
+        console.log(`PASS real CenterPoint; edited=${edited.id}, rejected=${toReject.id}, accepted track=${original.trackId}, cross-frame=${shared?.trackId ?? 'no shared ID in input'}, archive=${archiveStatus}, segmentationRequests=0`);
     } finally { await browser.close(); }
 }
 
@@ -266,6 +291,8 @@ function equalBoxes(actual, expected) {
 
 async function main() {
     const mode = process.argv[2];
+    if (!process.env.XTREME1_DB_ROOT && mode !== '--assets')
+        throw new Error('Set XTREME1_DB_ROOT to an isolated test database; browser tests write annotations.');
     if (mode === '--probe-browser') return browserRun();
     assert.ok(!mode || mode === '--assets', `unknown mode ${mode}`);
     const data = prepare();
