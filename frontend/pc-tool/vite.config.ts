@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const { trialPrelabel } = require('./scripts/trial-prelabel.cjs');
 const { trialDatabase } = require('./scripts/trial-database.cjs');
+const { trialSustechpoints } = require('./scripts/trial-sustechpoints.cjs');
 
 let localConfig = getLocalConfig();
 // https://vitejs.dev/config/
@@ -22,7 +23,7 @@ const config = defineConfig({
             },
         },
     },
-    plugins: [vue(), trialDatabase(), trialPrelabel(__dirname)],
+    plugins: [vue(), trialDatabase(), trialPrelabel(__dirname), trialSustechpoints(__dirname)],
     resolve: {
         alias: [
             { find: 'pc-render', replacement: path.resolve(__dirname, './src/packages/pc-render') },

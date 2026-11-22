@@ -198,4 +198,4 @@ function trialDatabase() {
     };
 }
 
-module.exports = { trialDatabase, middleware, databaseRoot, sceneId, sceneRoot, sourceRoot, predictionRoot, annotationRoot };
+module.exports = { trialDatabase, middleware, trusted, databaseRoot, sceneId, sceneRoot, sourceRoot, predictionRoot, annotationRoot };

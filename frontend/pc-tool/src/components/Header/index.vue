@@ -143,6 +143,7 @@
             <div class="trial-workflow-group" role="group" aria-label="单目标辅助">
                 <strong class="trial-group-label">单目标辅助</strong>
                 <div id="trial-assist-controls" class="trial-methods"></div>
+                <TrialSustechpoints :blocking="blocking" />
             </div>
         </div>
         <div id="trial-point-sam-controls" class="trial-point-sam-row" aria-label="Point-SAM 点选工具"></div>
@@ -172,6 +173,7 @@
     import { useInjectEditor } from '../../state';
     import useHeader from './useHeader';
     import TrialWorkspace from './TrialWorkspace.vue';
+    import TrialSustechpoints from './TrialSustechpoints.vue';
     import useFlow from '../../hook/useFlow';
     import { localTrial } from '../../common/localTrial';
     import useUI from '../../hook/useUI';

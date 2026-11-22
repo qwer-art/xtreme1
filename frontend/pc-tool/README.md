@@ -64,6 +64,41 @@ CenterPoint produces per-frame 3D detections; PubTracker associates eligible det
 
 ## Local Trial Validation
 
+### SUSTechPOINTS 补漏入口
+
+CenterPoint 检测 → PubTracker 关联 → 同台 SUSTechPOINTS 补标。打开 [Xtreme1 标注台](http://127.0.0.1:3200/local-trial)，顶部「单目标辅助」点 **SUSTechPOINTS**，携带当前帧进入原生编辑模式，不打开新页面。
+
+```bash
+cd /home/jerett/catkin_ws/src/xtreme1/frontend/pc-tool
+npm run dev -- --host 127.0.0.1 --port 3200 --strictPort
+```
+
+1. 当前 `scene-0061` 支持 39 个图像配对帧、6 相机。打开时先保存标注台改动，复用已有预测，不重跑模型。
+2. `Ctrl+拖框` 圈单个目标，原生三视图调整位置、尺寸和朝向；类别和 ID 在框旁工具栏修改。
+3. 补已有轨迹沿用其数字 ID，新目标使用自动编号。几何贴合不调用额外朝向网络，方向人工核准。
+4. 点上方「返回标注台」，自动保存补框并直接返回，无修改时直接退出。保存失败会保留当前编辑，可重试；原生磁盘按钮也写入同一工作稿。
+
+同台模式的类别列表与主标注台一致；旧页面中的 `BicycleRider` 保存为 `Cyclist`，框几何保持不变。
+
+中央点云滚轮已加快：每次滚轮事件拉近约 14%，缩远约 17%。核验单个目标时，选框后点框旁工具栏的 `focus` 按钮，直接拉近并隐藏周围背景；再次点击恢复原视角。缩放与聚焦只改变观察，不改框几何。
+
+保存位置统一为场景库 `annotations/working/scene-0061.json`，沿用历史记录与「文件 → 导出 JSON / 归档已确认版本」。仅新增、修改的框进入正式工作稿，删除的候选记为拒绝；未改预标注仍待审核。PubTracker ID 保留，新目标 Track ID 为 `sustech-<数字>`。
+
+原生编辑器源码、静态资源和适配均内置于 [vendor/sustechpoints](./vendor/sustechpoints/README.md)，不需要另克隆 SUSTechPOINTS、设置外部源码路径或启动 3202 服务。
+
+内置组件按 [GPL-3.0](./vendor/sustechpoints/LICENSE) 保留原许可与版权声明；发布其修改版时应一并提供对应源码与许可。主库原有许可文件不变。
+
+初始预标注阈值 0.5，已有人工框和调框优先，拒绝项排除。同台模式不读写旧独立补标稿；旧稿原位保留。
+
+开发验收（临时库，不改正式结果）：
+
+```bash
+node scripts/test-sustechpoints-merge.cjs
+node scripts/test-sustechpoints-workbench.cjs
+```
+
+### 场景数据验收
+
 自有数据首次接入示例。先把点云放入 `yard-01/source/cloud/<微秒>.pcd`，相机放入 `source/image/front/<微秒>.jpg` 等通道目录，按[数据接口说明](./docs/dataset-database.md)填写 `source/param/{pose,calib}.json`。
 
 ```bash
